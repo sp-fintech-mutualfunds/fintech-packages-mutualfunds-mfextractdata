@@ -68,8 +68,8 @@ class MfExtractdata extends BasePackage
                 if ($file) {
                     $fileModificationTime = $this->localContent->lastModified($this->sourceDir . 'funds.db.zst');
 
-                    if (\Carbon\Carbon::parse($fileModificationTime)->addDay()->timestamp < \Carbon\Carbon::now()->timestamp) {
-                        $this->addResponse($e->getMessage(), 1);
+                    if (\Carbon\Carbon::now()->timestamp < \Carbon\Carbon::parse($fileModificationTime)->addDay()->timestamp) {
+                        $this->addResponse('File was downloaded less than a day ago. Please use redownload to force redownload.', 1);
 
                         return false;
                     }
