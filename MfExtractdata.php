@@ -2,8 +2,10 @@
 
 namespace Apps\Fintech\Packages\Mf\Extractdata;
 
+use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCheckExistence;
+use League\Flysystem\UnableToWriteFile;
 use System\Base\BasePackage;
 
 class MfExtractdata extends BasePackage
@@ -15,6 +17,12 @@ class MfExtractdata extends BasePackage
     protected $trackCounter = 0;
 
     public $method;
+
+    protected $apiClient;
+
+    protected $apiClientConfig;
+
+    protected $settings = Settings::class;
 
     public function onConstruct()
     {
@@ -163,5 +171,201 @@ class MfExtractdata extends BasePackage
 
             return false;
         }
+    }
+
+    public function sync($data)
+    {
+        if ($data['sync'] === 'gold') {
+            return $this->processGold($data);
+        }
+
+        if (!$this->initApi($data)) {
+            $this->addResponse('Could not initialize the API.', 1);
+
+            return false;
+        }
+
+        $collection = 'MutualFundsApi';
+        $method = 'getFund' . ucfirst($data['sync']);
+
+        // Scheme Details
+        // $method = 'getFundSchemeDetails';
+        // $args = ['TRSSG1-GR'];
+
+        //Gold Prices (Kuvera - prices are of 1G 22K + It seems like it a day old price Try not to use it.)
+        // $collection = 'GoldApi';
+        // $method = 'getCurrentGoldPrice';
+        // $method = 'getGoldPrices';
+        // $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse(true);
+
+        //Index Data Api
+        // $collection = 'IndexDataApi';
+        // $method = 'getNiftySmappcap100Value';
+        // $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse();
+
+        $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse(true);
+
+        $process = 'process' . ucfirst($data['sync']);
+
+        $this->$process($responseArr);
+    }
+
+    protected function processCategories($responseArr)
+    {
+        trace([$responseArr]);
+    }
+
+    protected function processAmcs($responseArr)
+    {
+        trace([$responseArr]);
+    }
+
+    protected function processSchemes($responseArr)
+    {
+        trace([$responseArr]);
+    }
+
+    protected function processGold($data)
+    {
+        $now = \Carbon\Carbon::now();
+        $today = $now->toDateString();
+
+        $days = 10;
+        if (isset($data['days'])) {
+            $days = $data['days'];
+
+            if ($days > 249) {
+                $days = 249;//249 days max, else you will get 500
+            }
+
+            if ($days === 0) {
+                $days = 10;
+            }
+        }
+
+        // Gold Prices via growww.in
+        // https://groww.in/v1/api/physicalGold/v1/rates/aggregated_api?days=249
+        // Days are number of days worth of data.
+        $response = $this->remoteWebContent->get('https://groww.in/v1/api/physicalGold/v1/rates/aggregated_api?days=' . $days);
+
+        if ($response->getStatusCode() === 200) {
+            try {
+                $this->localContent->write($this->sourceDir . 'gold-' . $today . '.json', $response->getBody()->getContents());
+            } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                $this->addResponse($e->getmessage(), 1);
+
+                return false;
+            }
+        } else {
+            $this->addResponse($response->getStatusCode() . ':' . $response->getMessage(), 1);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function initApi($data, $sink = null, $method = null)
+    {
+        if ($this->apiClient && $this->apiClientConfig) {
+            return true;
+        }
+
+        if (!isset($data['api_id'])) {
+            $this->addResponse('API information not provided', 1, []);
+
+            return false;
+        }
+
+        if (isset($data['api_id']) && $data['api_id'] == '0') {
+            $this->addResponse('This is local module and not remote module, cannot sync.', 1, []);
+
+            return false;
+        }
+
+        if ($sink & $method) {
+            $this->apiClient = $this->basepackages->apiClientServices->setHttpOptions(['timeout' => 3600])->setMonitorProgress($sink, $method)->useApi($data['api_id']);
+        } else {
+            $this->apiClient = $this->basepackages->apiClientServices->useApi($data['api_id']);
+        }
+
+        $this->apiClientConfig = $this->apiClient->getApiConfig();
+
+        if ($this->apiClientConfig['auth_type'] === 'auth' &&
+            ((!$this->apiClientConfig['username'] || $this->apiClientConfig['username'] === '') &&
+            (!$this->apiClientConfig['password'] || $this->apiClientConfig['password'] === ''))
+        ) {
+            $this->addResponse('Username/Password missing, cannot sync', 1);
+
+            return false;
+        } else if ($this->apiClientConfig['auth_type'] === 'access_token' &&
+                  (!$this->apiClientConfig['access_token'] || $this->apiClientConfig['access_token'] === '')
+        ) {
+            $this->addResponse('Access token missing, cannot sync', 1);
+
+            return false;
+        } else if ($this->apiClientConfig['auth_type'] === 'autho' &&
+                  (!$this->apiClientConfig['authorization'] || $this->apiClientConfig['authorization'] === '')
+        ) {
+            $this->addResponse('Authorization token missing, cannot sync', 1);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public function getAvailableApis($getAll = false, $returnApis = true)
+    {
+        $apisArr = [];
+
+        if (!$getAll) {
+            $package = $this->getPackage();
+            if (isset($package['settings']) &&
+                isset($package['settings']['api_clients']) &&
+                is_array($package['settings']['api_clients']) &&
+                count($package['settings']['api_clients']) > 0
+            ) {
+                foreach ($package['settings']['api_clients'] as $key => $clientId) {
+                    $client = $this->basepackages->apiClientServices->getApiById($clientId);
+
+                    if ($client) {
+                        array_push($apisArr, $client);
+                    }
+                }
+            }
+        } else {
+            $apisArr = $this->basepackages->apiClientServices->getApiByAppType();
+        }
+
+        if (count($apisArr) > 0) {
+            foreach ($apisArr as $api) {
+                if ($api['category'] === 'repos') {
+                    $useApi = $this->basepackages->apiClientServices->useApi([
+                            'config' =>
+                                [
+                                    'id'           => $api['id'],
+                                    'category'     => $api['category'],
+                                    'provider'     => $api['provider'],
+                                    'checkOnly'    => true//Set this to check if the API exists and can be instantiated.
+                                ]
+                        ]);
+
+                    if ($useApi) {
+                        $apiConfig = $useApi->getApiConfig();
+
+                        $apis[$api['id']]['id'] = $apiConfig['id'];
+                        $apis[$api['id']]['name'] = $apiConfig['name'];
+                        $apis[$api['id']]['data']['url'] = $apiConfig['repo_url'];
+                    }
+                }
+            }
+        }
+
+        if ($returnApis) {
+            return $apis ?? [];
+        }
+
+        return $apisArr;
     }
 }
