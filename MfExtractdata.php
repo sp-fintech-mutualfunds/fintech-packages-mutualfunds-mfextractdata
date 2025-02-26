@@ -197,7 +197,7 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function processMfData()
+    protected function processMfData($resetData = false)
     {
         $this->method = 'processMfData';
 
@@ -224,127 +224,66 @@ class MfExtractdata extends BasePackage
             return false;
         }
 
-        //Test
-        try {
-        $this->basepackages->utils->setMicroTimer('DBStart', true);
-
-        $isinNavs =
-            $sqlite->query(
-                "SELECT * from nav N
-                JOIN securities S ON N.scheme_code = S.scheme_code
-                WHERE S.isin = 'INF760K01FV4'
-                AND N.date >= '2000-01-01'
-                ORDER BY N.date DESC"
-            )->fetchAll(Enum::FETCH_ASSOC);
-
-        $this->basepackages->utils->setMicroTimer('DBStop', true);
-        trace(varsToDump : [$this->basepackages->utils->getMicroTimer()], exit: false, dumpTraces: false);
-
-        $this->basepackages->utils->resetMicroTimer();
-
-        $this->basepackages->utils->setMicroTimer('FFReadStart', true);
         $this->navsPackage = new MfNavs;
-        $new = $this->navsPackage->getMfNavsByIsin('INF760K01FV4');
-        $this->basepackages->utils->setMicroTimer('FFReadStop', true);
-        trace(varsToDump : [$this->basepackages->utils->getMicroTimer()], exit: false, dumpTraces: false);
 
-        $this->basepackages->utils->resetMicroTimer();
+        $isins = $sqlite->query("SELECT * from securities")->fetchAll(Enum::FETCH_ASSOC);
 
-        $this->basepackages->utils->setMicroTimer('FFReadStart2', true);
-        $this->navsPackage = new MfNavs;
-        $new = $this->navsPackage->getById(1);
-        $this->basepackages->utils->setMicroTimer('FFReadStop2', true);
-        trace(varsToDump : [$this->basepackages->utils->getMicroTimer()], exit: false, dumpTraces: false);
-    } catch (\throwable $e) {
-        trace([$e]);
-    }
-        die();
-        //Test
-        try {
-            $this->navsPackage = new MfNavs;
+        $isinsTotal = count($isins);
 
-            $isins = $sqlite->query("SELECT * from securities")->fetchAll(Enum::FETCH_ASSOC);
+        if ($isins && $isinsTotal > 0) {
+            foreach ($isins as $key => $isin) {
+                $this->basepackages->utils->setMicroTimer('Start');
+                $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
 
-            if ($isins && count($isins) > 0) {
-                $isinsTotal = 1000;
-                foreach ($isins as $key => $isin) {
-                    $this->basepackages->utils->setMicroTimer('Start');
-                    $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
-
-                    // $lastUpdated = $this->now->subDay(1)->toDateString();
+                $lastUpdated = $this->now->subDay(1)->toDateString();
+                if ($resetData) {
                     $lastUpdated = '2000-01-01';
+                }
 
-                    if (!$dbIsin) {
-                        $dbIsin = [];
-                        $dbIsin['type'] = $isin['type'];
-                        $dbIsin['scheme_code'] = $isin['scheme_code'];
-                        $dbIsin['isin'] = $isin['isin'];
-                        $dbIsin['navs'] = [];
-                    } else {
-                        $lastUpdated = $dbIsin['last_updated'];
-                    }
+                if (!$dbIsin) {
+                    $dbIsin = [];
+                    $dbIsin['type'] = $isin['type'];
+                    $dbIsin['scheme_code'] = $isin['scheme_code'];
+                    $dbIsin['isin'] = $isin['isin'];
+                    $dbIsin['navs'] = [];
+                } else {
+                    $lastUpdated = $dbIsin['last_updated'];
+                }
 
-                    $isin = $isin['isin'];
-                    // $this->basepackages->utils->setMicroTimer('DBStart', true);
-                    $isinNavs =
-                        $sqlite->query(
-                            "SELECT * from nav N
-                            JOIN securities S ON N.scheme_code = S.scheme_code
-                            WHERE S.isin = '$isin'
-                            AND N.date >= '$lastUpdated'
-                            ORDER BY N.date ASC"
-                        )->fetchAll(Enum::FETCH_ASSOC);
+                $isin = $isin['isin'];
 
-                    // $this->basepackages->utils->setMicroTimer('DBStop', true);
-                    // trace(varsToDump : [$this->basepackages->utils->getMicroTimer()], exit: false, dumpTraces: false);
-                    if ($isinNavs && count($isinNavs) > 0) {
-                        $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
-                        $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
-                        foreach ($isinNavs as $isinNav) {
-                            $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
-                        }
-                    }
+                $isinNavs =
+                    $sqlite->query(
+                        "SELECT * from nav N
+                        JOIN securities S ON N.scheme_code = S.scheme_code
+                        WHERE S.isin = '$isin'
+                        AND N.date >= '$lastUpdated'
+                        ORDER BY N.date ASC"
+                    )->fetchAll(Enum::FETCH_ASSOC);
 
-                    if (isset($dbIsin['id'])) {
-                        $this->navsPackage->update($dbIsin);
-                    } else {
-                        $this->navsPackage->addMfNavs($dbIsin);
-                    }
-                    // $this->basepackages->utils->setMicroTimer('FFStop', true);
-                    // trace(varsToDump : [$this->basepackages->utils->getMicroTimer()], exit: false, dumpTraces: false);
-
-                    // $this->basepackages->utils->setMicroTimer('FFReadStart', true);
-                    // $new = $this->navsPackage->getMfNavsByIsin($isin);
-                    $this->basepackages->utils->setMicroTimer('End');
-
-                    $time = $this->basepackages->utils->getMicroTimer();
-
-                    if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
-                        $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $key)));
-                        // $this->basepackages->utils->formatMicrotime($time[1]['difference'] * $isinsTotal);
-                    }
-
-                    $this->basepackages->utils->resetMicroTimer();
-                    // trace(varsToDump : [$this->basepackages->utils->getMicroTimer()], exit: true, dumpTraces: false);
-                    $this->basepackages->progress->updateProgress(
-                        method: $this->method,
-                        counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($key + 1)],
-                        text: 'Time remaining : ' . $totalTime . '...'
-                    );
-                    if ($key === 1000) {
-                        return true;
+                if ($isinNavs && count($isinNavs) > 0) {
+                    $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
+                    $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
+                    foreach ($isinNavs as $isinNav) {
+                        $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
                     }
                 }
+
+                if (isset($dbIsin['id'])) {
+                    $this->navsPackage->update($dbIsin);
+                } else {
+                    $this->navsPackage->addMfNavs($dbIsin);
+                }
+
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($key + 1)],
+                    text: 'Time remaining : ' . $totalTime . '...'
+                );
             }
-        } catch (\throwable $e) {
-            trace([$e]);
         }
 
         return true;
-        // $statement = $sqlite->prepare('SELECT * from nav LIMIT 0,1');
-        // trace([$sqlite->query('SELECT * from securities LIMIT 0,10')->fetchAll(Enum::FETCH_ASSOC)]);
-        // trace([$sqlite->query("SELECT * from nav N JOIN securities S ON N.scheme_code = S.scheme_code WHERE S.isin = 'INF209KB1ZL4' LIMIT 0,10")->fetchAll(Enum::FETCH_ASSOC)]);
-        // trace([$sqlite->query("SELECT * from nav N JOIN securities S ON N.scheme_code = S.scheme_code WHERE S.isin = 'INF209KB1ZL4'")->fetchAll(Enum::FETCH_ASSOC)]);
     }
 
     public function sync($data)
