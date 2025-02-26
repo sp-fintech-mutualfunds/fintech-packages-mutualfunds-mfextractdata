@@ -6,6 +6,7 @@ use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use Apps\Fintech\Packages\Mf\Navs\MfNavs;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCheckExistence;
+use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToWriteFile;
 use Phalcon\Db\Enum;
 use System\Base\BasePackage;
@@ -73,21 +74,44 @@ class MfExtractdata extends BasePackage
         }
     }
 
-    protected function downloadMfData()
+    protected function downloadMfData($data)
     {
         $today = $this->now->toDateString();
 
         try {
-            //File is already extracted
-            if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                return true;
-            }
+            if (isset($data['redownload']) &&
+                $data['redownload'] == 'false'
+            ) {
+                //File is already extracted
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
+                    return true;
+                }
 
-            //File is already downloaded
-            if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
-                return true;
+                //File is already downloaded
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
+                    return true;
+                }
+            } else {
+                //File is already downloaded
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
+                    $remoteSize = getRemoteFilesize($this->sourceLink);
+
+                    $localSize = $this->localContent->fileSize($this->sourceDir . $today . '-funds.db.zst');
+
+                    if ($remoteSize === $localSize) {
+                        return true;
+                    }
+                }
+
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
+                    $this->localContent->delete($this->sourceDir . $today . '-funds.db');
+                }
+
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
+                    $this->localContent->delete($this->sourceDir . $today . '-funds.db.zst');
+                }
             }
-        } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | \throwable $e) {
+        } catch (FilesystemException | UnableToCheckExistence | UnableToDeleteFile | UnableToRetrieveMetadata | \throwable $e) {
             $this->addResponse($e->getMessage(), 1);
 
             return false;
@@ -153,16 +177,24 @@ class MfExtractdata extends BasePackage
         return false;
     }
 
-    protected function extractMfData()
+    protected function extractMfData($data)
     {
         $this->method = 'extractMfData';
 
         $today = $this->now->toDateString();
 
         try {
-            //File is already extracted
-            if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                return true;
+            if (isset($data['redownload']) &&
+                $data['redownload'] == 'false'
+            ) {
+                //File is already extracted
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
+                    return true;
+                }
+            } else {
+                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
+                    $this->localContent->delete($this->sourceDir . $today . '-funds.db');
+                }
             }
 
             $file = $this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst');
@@ -172,16 +204,39 @@ class MfExtractdata extends BasePackage
 
                 return false;
             }
+            //Decompress
             exec('unzstd -d -f ' . base_path($this->sourceDir) . $today . '-funds.db.zst -o ' . base_path($this->sourceDir) . $today . '-funds.db', $output, $result);
-            $this->basepackages->progress->updateProgress($this->method, null, false, null, ['stepsTotal' => 5, 'stepsCurrent' => 1]);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
+                text: 'Decompressing...'
+            );
+
+            //Create INDEXES
             exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress($this->method, null, false, null, ['stepsTotal' => 5, 'stepsCurrent' => 2]);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
+                text: 'Generating Index...'
+            );
             exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress($this->method, null, false, null, ['stepsTotal' => 5, 'stepsCurrent' => 3]);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
+                text: 'Generating Index...'
+            );
             exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress($this->method, null, false, null, ['stepsTotal' => 5, 'stepsCurrent' => 4]);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
+                text: 'Generating Index...'
+            );
             exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress($this->method, null, false, null, ['stepsTotal' => 5, 'stepsCurrent' => 5]);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
+                text: 'Generating Index...'
+            );
 
             if ($result !== 0) {
                 $this->addResponse('Error extracting file', 1, ['output' => $output]);
@@ -197,7 +252,7 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function processMfData($resetData = false)
+    protected function processMfData($data)
     {
         $this->method = 'processMfData';
 
@@ -233,10 +288,12 @@ class MfExtractdata extends BasePackage
         if ($isins && $isinsTotal > 0) {
             foreach ($isins as $key => $isin) {
                 $this->basepackages->utils->setMicroTimer('Start');
+
                 $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
 
                 $lastUpdated = $this->now->subDay(1)->toDateString();
-                if ($resetData) {
+
+                if (isset($data['reset']) && $data['reset'] == 'true') {
                     $lastUpdated = '2000-01-01';
                 }
 
@@ -262,18 +319,39 @@ class MfExtractdata extends BasePackage
                     )->fetchAll(Enum::FETCH_ASSOC);
 
                 if ($isinNavs && count($isinNavs) > 0) {
-                    $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
-                    $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
+                    if ($this->helper->last($isinNavs)['date']) {
+                        $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
+                    } else {
+                        $dbIsin['last_updated'] = $today;
+                    }
+                    if ($this->helper->last($isinNavs)['nav']) {
+                        $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
+                    } else {
+                        $dbIsin['latest_nav'] = 0;
+                    }
                     foreach ($isinNavs as $isinNav) {
                         $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
                     }
+                } else {
+                    $dbIsin['last_updated'] = $today;
+                    $dbIsin['latest_nav'] = 0;
                 }
 
                 if (isset($dbIsin['id'])) {
                     $this->navsPackage->update($dbIsin);
                 } else {
-                    $this->navsPackage->addMfNavs($dbIsin);
+                    $this->navsPackage->add($dbIsin);
                 }
+
+                $this->basepackages->utils->setMicroTimer('End');
+
+                $time = $this->basepackages->utils->getMicroTimer();
+
+                if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
+                    $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $key)));
+                }
+
+                $this->basepackages->utils->resetMicroTimer();
 
                 $this->basepackages->progress->updateProgress(
                     method: $this->method,
