@@ -13,7 +13,7 @@
 		"core" : 
 		{
 			"name" : "Core",
-			"version" : "0.0.0-rc.9",
+			"version" : "0.0.0-rc.11",
 			"repo" : "https://github.com/sp-framework/core"
 		},
 		"apptype" : 
@@ -22,6 +22,38 @@
 			"version" : "0.3.0",
 			"repo" : "https://github.com/sp-fintech/fintech"
 		},
+		"packages" : 
+		[
+			{
+				"name" : "MfNavs",
+				"version" : "0.0.0",
+				"repo" : "https://github.com/sp-fintech/fintech-packages-mutualfunds-mfnavs"
+			},
+			
+			{
+				"name" : "MfAmcs",
+				"version" : "0.1.0",
+				"repo" : "https://github.com/sp-fintech/fintech-packages-mutualfunds-mfamcs"
+			},
+			
+			{
+				"name" : "MfTypes",
+				"version" : "0.0.0",
+				"repo" : "https://github.com/sp-fintech/fintech-packages-mutualfunds-mftypes"
+			},
+			
+			{
+				"name" : "MfSchemes",
+				"version" : "0.0.0",
+				"repo" : "https://github.com/sp-fintech/fintech-packages-mutualfunds-mfschemes"
+			},
+			
+			{
+				"name" : "MfCategories",
+				"version" : "0.0.0",
+				"repo" : "https://github.com/sp-fintech/fintech-packages-mutualfunds-mfcategories"
+			}
+		],
 		"middlewares" : [],
 		"externals" : 
 		{

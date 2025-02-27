@@ -6,6 +6,7 @@ use Apps\Fintech\Packages\Mf\Amcs\MfAmcs;
 use Apps\Fintech\Packages\Mf\Categories\MfCategories;
 use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use Apps\Fintech\Packages\Mf\Navs\MfNavs;
+use Apps\Fintech\Packages\Mf\Types\MfTypes;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCheckExistence;
 use League\Flysystem\UnableToDeleteFile;
@@ -37,6 +38,10 @@ class MfExtractdata extends BasePackage
     protected $categoriesPackage;
 
     protected $amcsPackage;
+
+    protected $typesPackage;
+
+    protected $schemesPackage;
 
     public function onConstruct()
     {
@@ -382,8 +387,6 @@ class MfExtractdata extends BasePackage
             return false;
         }
 
-        $collection = 'MutualFundsApi';
-        $method = 'getFund' . ucfirst($data['sync']);
 
         // Scheme Details
         // $method = 'getFundSchemeDetails';
@@ -400,7 +403,14 @@ class MfExtractdata extends BasePackage
         // $method = 'getNiftySmappcap100Value';
         // $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse();
 
-        $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse(true);
+        $getArr = true;
+        if ($data['sync'] === 'schemeCategories') {
+            $getArr = false;
+        }
+
+        $method = 'getFund' . ucfirst($data['sync']);
+
+        $responseArr = $this->apiClient->useMethod('MutualFundsApi', $method, [])->getResponse($getArr);
 
         if ($responseArr && count($responseArr) > 0) {
             $process = 'process' . ucfirst($data['sync']);
@@ -415,24 +425,66 @@ class MfExtractdata extends BasePackage
         return false;
     }
 
-    protected function processCategories(array $responseArr)
+    protected function processSchemeCategories(array $responseArr)
     {
+        $this->typesPackage = new MfTypes;
         $this->categoriesPackage = new MfCategories;
 
         $counter = [];
-        $counter['new'] = 0;
-        $counter['updated'] = 0;
+        $counter['types'] = [];
+        $counter['types']['new'] = 0;
+        $counter['categories'] = [];
+        $counter['categories']['new'] = 0;
+        $counter['categories']['updated'] = 0;
 
+        foreach ($responseArr as $type => $categories) {
+            $searchType = $this->typesPackage->getMfTypeByName($type);
+
+            if (!$searchType) {
+                $newType['name'] = $type;
+
+                $this->typesPackage->add($newType);
+
+                $counter['types']['new'] = $counter['types']['new'] + 1;
+            }
+
+            if (count($categories) > 0) {
+                $typeCategories = [];
+
+                array_walk($categories, function($name, $index) use(&$typeCategories) {
+                    $typeCategories[$index]['category_name'] = $name;
+                    $typeCategories[$index]['report_date'] = $this->now->toDateString();
+                });
+
+                $this->processCategories($typeCategories, $counter, false);
+            }
+        }
+
+        $responseArr = $this->apiClient->useMethod('MutualFundsApi', 'getFundCategories', [])->getResponse(true);
+
+        if ($responseArr && count($responseArr) > 0) {
+            $this->processCategories($responseArr, $counter);
+        }
+
+        $this->addResponse('Synced categories. Added ' . $counter['types']['new'] . ' types. Added ' . $counter['categories']['new'] . ' categories. Updated ' . $counter['categories']['updated'] . ' categories.');
+
+        return true;
+    }
+
+    protected function processCategories(array $responseArr, &$counter, $update = true)
+    {
         foreach ($responseArr as $response) {
             $category = $this->categoriesPackage->getMfCategoryByName($response['category_name']);
 
             if ($category) {
-                if ($category['report_date'] !== $response['report_date']) {
-                    $category = array_replace($category, $response);
+                if ($update) {
+                    if ($category['report_date'] !== $response['report_date']) {
+                        $category = array_replace($category, $response);
 
-                    $this->categoriesPackage->update($category);
+                        $this->categoriesPackage->update($category);
 
-                    $counter['updated'] = $counter['updated'] + 1;
+                        $counter['categories']['updated'] = $counter['categories']['updated'] + 1;
+                    }
                 }
             } else {
                 $category = $response;
@@ -440,11 +492,9 @@ class MfExtractdata extends BasePackage
 
                 $this->categoriesPackage->add($category);
 
-                $counter['new'] = $counter['new'] + 1;
+                $counter['categories']['new'] = $counter['categories']['new'] + 1;
             }
         }
-
-        $this->addResponse('Synced categories. Added ' . $counter['new'] . ' categories. Updated ' . $counter['updated'] . ' categories.');
 
         return true;
     }
@@ -484,6 +534,34 @@ class MfExtractdata extends BasePackage
     protected function processSchemes(array $responseArr)
     {
         trace([$responseArr]);
+        $this->typesPackage = new MfTypes;
+
+        $counter = [];
+        $counter['new'] = 0;
+        $counter['updated'] = 0;
+
+        foreach ($responseArr as $response) {
+            $amc = $this->amcsPackage->getMfAmcByCode($response['AMC_code']);
+
+            if ($amc) {
+                $amc = array_replace($amc, $response);
+
+                $this->amcsPackage->update($amc);
+
+                $counter['updated'] = $counter['updated'] + 1;
+            } else {
+                $amc = $response;
+                $amc['amc_code'] = $amc['AMC_code'];
+
+                $this->amcsPackage->add($amc);
+
+                $counter['new'] = $counter['new'] + 1;
+            }
+        }
+
+        $this->addResponse('Synced AMCs. Added ' . $counter['new'] . ' AMCs. Updated ' . $counter['updated'] . ' AMCs.');
+
+        return true;
     }
 
     protected function processGold($data)
