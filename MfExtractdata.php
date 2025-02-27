@@ -2,6 +2,7 @@
 
 namespace Apps\Fintech\Packages\Mf\Extractdata;
 
+use Apps\Fintech\Packages\Mf\Categories\MfCategories;
 use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use Apps\Fintech\Packages\Mf\Navs\MfNavs;
 use League\Flysystem\FilesystemException;
@@ -31,6 +32,8 @@ class MfExtractdata extends BasePackage
     protected $settings = Settings::class;
 
     protected $navsPackage;
+
+    protected $categoriesPackage;
 
     public function onConstruct()
     {
@@ -396,22 +399,59 @@ class MfExtractdata extends BasePackage
 
         $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse(true);
 
-        $process = 'process' . ucfirst($data['sync']);
+        if ($responseArr && count($responseArr) > 0) {
+            $process = 'process' . ucfirst($data['sync']);
 
-        $this->$process($responseArr);
+            $this->$process($responseArr);
+
+            return true;
+        }
+
+        $this->addResponse('Error processing sync', 1);
+
+        return false;
     }
 
-    protected function processCategories($responseArr)
+    protected function processCategories(array $responseArr)
+    {
+        $this->categoriesPackage = new MfCategories;
+
+        $counter = [];
+        $counter['new'] = 0;
+        $counter['updated'] = 0;
+
+        foreach ($responseArr as $response) {
+            $category = $this->categoriesPackage->getMfCategoryByName($response['category_name']);
+
+            if ($category) {
+                if ($category['report_date'] !== $response['report_date']) {
+                    $category = array_replace($category, $response);
+
+                    $this->categoriesPackage->update($category);
+
+                    $counter['updated'] = $counter['updated'] + 1;
+                }
+            } else {
+                $category = $response;
+                $category['name'] = $category['category_name'];
+
+                $this->categoriesPackage->add($category);
+
+                $counter['new'] = $counter['new'] + 1;
+            }
+        }
+
+        $this->addResponse('Synced categories. Added ' . $counter['new'] . ' categories. Updated ' . $counter['updated'] . ' categories.');
+
+        return true;
+    }
+
+    protected function processAmcs(array $responseArr)
     {
         trace([$responseArr]);
     }
 
-    protected function processAmcs($responseArr)
-    {
-        trace([$responseArr]);
-    }
-
-    protected function processSchemes($responseArr)
+    protected function processSchemes(array $responseArr)
     {
         trace([$responseArr]);
     }
