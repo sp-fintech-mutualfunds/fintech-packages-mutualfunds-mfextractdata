@@ -2,6 +2,7 @@
 
 namespace Apps\Fintech\Packages\Mf\Extractdata;
 
+use Apps\Fintech\Packages\Mf\Amcs\MfAmcs;
 use Apps\Fintech\Packages\Mf\Categories\MfCategories;
 use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use Apps\Fintech\Packages\Mf\Navs\MfNavs;
@@ -34,6 +35,8 @@ class MfExtractdata extends BasePackage
     protected $navsPackage;
 
     protected $categoriesPackage;
+
+    protected $amcsPackage;
 
     public function onConstruct()
     {
@@ -448,7 +451,34 @@ class MfExtractdata extends BasePackage
 
     protected function processAmcs(array $responseArr)
     {
-        trace([$responseArr]);
+        $this->amcsPackage = new MfAmcs;
+
+        $counter = [];
+        $counter['new'] = 0;
+        $counter['updated'] = 0;
+
+        foreach ($responseArr as $response) {
+            $amc = $this->amcsPackage->getMfAmcByCode($response['AMC_code']);
+
+            if ($amc) {
+                $amc = array_replace($amc, $response);
+
+                $this->amcsPackage->update($amc);
+
+                $counter['updated'] = $counter['updated'] + 1;
+            } else {
+                $amc = $response;
+                $amc['amc_code'] = $amc['AMC_code'];
+
+                $this->amcsPackage->add($amc);
+
+                $counter['new'] = $counter['new'] + 1;
+            }
+        }
+
+        $this->addResponse('Synced AMCs. Added ' . $counter['new'] . ' AMCs. Updated ' . $counter['updated'] . ' AMCs.');
+
+        return true;
     }
 
     protected function processSchemes(array $responseArr)
