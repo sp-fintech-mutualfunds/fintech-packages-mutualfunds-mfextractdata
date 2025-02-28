@@ -333,9 +333,8 @@ class MfExtractdata extends BasePackage
                     $isinArr = explode('INF', $line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment']);
 
                     if (count($isinArr) === 0) {
-                        $this->addResponse('Cannot extract isin information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
-
-                        return false;
+                        $isinArr[0] = '';
+                        $isinArr[1] = 'UNKNOWN_' . $lineNo;
                     }
 
                     if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
