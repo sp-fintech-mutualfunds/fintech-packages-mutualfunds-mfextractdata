@@ -319,8 +319,8 @@ class MfExtractdata extends BasePackage
             $records = $statement->process($csv);
 
             $isinsTotal = count($records);
-
-            foreach ($records as $lineNo => $line) {
+            $lineNo = 1;
+            foreach ($records as $line) {
                 try {
                     //Timer
                     $this->basepackages->utils->setMicroTimer('Start');
@@ -404,6 +404,8 @@ class MfExtractdata extends BasePackage
 
                     //Timer
                     $this->processUpdateTimer($isinsTotal, $lineNo);
+
+                    $lineNo++;
                 } catch (\throwable $e) {
                     $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
 
