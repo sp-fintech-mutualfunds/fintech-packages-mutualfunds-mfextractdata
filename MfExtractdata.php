@@ -9,6 +9,7 @@ use Apps\Fintech\Packages\Mf\Navs\MfNavs;
 use Apps\Fintech\Packages\Mf\Schemes\MfSchemes;
 use Apps\Fintech\Packages\Mf\Types\MfTypes;
 use League\Csv\Reader;
+use League\Csv\Statement;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCheckExistence;
 use League\Flysystem\UnableToDeleteFile;
@@ -311,21 +312,15 @@ class MfExtractdata extends BasePackage
         ) {
             $this->schemesPackage = new MfSchemes;
 
-            $csv = Reader::createFromPath(base_path($this->destDir . $today . '-schemes.csv'));
-
+            $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $today . '-schemes.csv'));
             $csv->setHeaderOffset(0);
 
-            $headersArr = $csv->getHeader();
+            $statement = (new Statement())->orderByAsc('AMC');
+            $records = $statement->process($csv);
 
-            $headers = [];
+            $isinsTotal = count($records);
 
-            foreach ($headersArr as $headerValue) {
-                $headers[trim($headerValue)] = trim($headerValue);
-            }
-
-            $isinsTotal = count($csv);
-
-            foreach ($csv as $lineNo => $line) {
+            foreach ($records as $lineNo => $line) {
                 try {
                     //Timer
                     $this->basepackages->utils->setMicroTimer('Start');
