@@ -6,7 +6,9 @@ use Apps\Fintech\Packages\Mf\Amcs\MfAmcs;
 use Apps\Fintech\Packages\Mf\Categories\MfCategories;
 use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use Apps\Fintech\Packages\Mf\Navs\MfNavs;
+use Apps\Fintech\Packages\Mf\Schemes\MfSchemes;
 use Apps\Fintech\Packages\Mf\Types\MfTypes;
+use League\Csv\Reader;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCheckExistence;
 use League\Flysystem\UnableToDeleteFile;
@@ -19,9 +21,11 @@ class MfExtractdata extends BasePackage
 {
     protected $now;
 
-    protected $sourceDir = 'apps/Fintech/Packages/Mf/Extractdata/Data/';
+    protected $sourceLink;
 
-    protected $sourceLink = 'https://github.com/captn3m0/historical-mf-data/releases/latest/download/funds.db.zst';
+    protected $destDir = 'apps/Fintech/Packages/Mf/Extractdata/Data/';
+
+    protected $destFile;
 
     protected $trackCounter = 0;
 
@@ -45,15 +49,15 @@ class MfExtractdata extends BasePackage
 
     public function onConstruct()
     {
-        if (!is_dir(base_path($this->sourceDir))) {
-            if (!mkdir(base_path($this->sourceDir), 0777, true)) {
+        if (!is_dir(base_path($this->destDir))) {
+            if (!mkdir(base_path($this->destDir), 0777, true)) {
                 return false;
             }
         }
 
-        //Increase Exectimeout to 5 hours as this process takes time to extract and merge data.
-        if ((int) ini_get('max_execution_time') < 18000) {
-            set_time_limit(18000);
+        //Increase Exectimeout to 24 hours as this process takes time to extract and merge data.
+        if ((int) ini_get('max_execution_time') < 86400) {
+            set_time_limit(86400);
         }
 
         //Increase memory_limit to 1G as the process takes a bit of memory to process the array.
@@ -87,50 +91,79 @@ class MfExtractdata extends BasePackage
 
     protected function downloadMfData($data)
     {
+        $this->method = 'downloadMfData';
+
         $today = $this->now->toDateString();
 
-        try {
-            if (isset($data['redownload']) &&
-                $data['redownload'] == 'false'
-            ) {
-                //File is already extracted
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                    return true;
-                }
+        if (isset($data['schemes']) &&
+            $data['schemes'] == 'true'
+        ) {
+            $this->sourceLink = 'https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0';
 
-                //File is already downloaded
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
-                    return true;
-                }
-            } else {
-                //File is already downloaded
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
-                    $remoteSize = getRemoteFilesize($this->sourceLink);
+            $this->destFile = base_path($this->destDir) . $today . '-schemes.csv';
 
-                    $localSize = $this->localContent->fileSize($this->sourceDir . $today . '-funds.db.zst');
+            try {
+                //File is already downloaded
+                if ($this->localContent->fileExists($this->destDir . $today . '-schemes.csv')) {
+                    $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+
+                    $localSize = $this->localContent->fileSize($this->destDir . $today . '-schemes.csv');
 
                     if ($remoteSize === $localSize) {
                         return true;
                     }
                 }
+            } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
 
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                    $this->localContent->delete($this->sourceDir . $today . '-funds.db');
-                }
-
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst')) {
-                    $this->localContent->delete($this->sourceDir . $today . '-funds.db.zst');
-                }
+                return false;
             }
-        } catch (FilesystemException | UnableToCheckExistence | UnableToDeleteFile | UnableToRetrieveMetadata | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
+        } else {
+            $this->sourceLink = 'https://github.com/captn3m0/historical-mf-data/releases/latest/download/funds.db.zst';
 
-            return false;
+            $this->destFile = base_path($this->destDir) . $today . '-funds.db.zst';
+
+            try {
+                if (isset($data['redownload']) &&
+                    $data['redownload'] == 'false'
+                ) {
+                    //File is already extracted
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                        return true;
+                    }
+
+                    //File is already downloaded
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
+                        return true;
+                    }
+                } else {
+                    //File is already downloaded
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
+                        $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+
+                        $localSize = $this->localContent->fileSize($this->destDir . $today . '-funds.db.zst');
+
+                        if ($remoteSize === $localSize) {
+                            return true;
+                        }
+                    }
+
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                        $this->localContent->delete($this->destDir . $today . '-funds.db');
+                    }
+
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
+                        $this->localContent->delete($this->destDir . $today . '-funds.db.zst');
+                    }
+                }
+            } catch (FilesystemException | UnableToCheckExistence | UnableToDeleteFile | UnableToRetrieveMetadata | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
+
+                return false;
+            }
         }
 
-        $this->method = 'downloadMfData';
-
-        return $this->downloadData($this->sourceLink, base_path($this->sourceDir) . $today . '-funds.db.zst');
+        return $this->downloadData($this->sourceLink, $this->destFile);
     }
 
     protected function downloadData($url, $sink)
@@ -192,72 +225,76 @@ class MfExtractdata extends BasePackage
     {
         $this->method = 'extractMfData';
 
-        $today = $this->now->toDateString();
+        if (isset($data['redownload']) &&
+            $data['redownload'] == 'true'
+        ) {
+            $today = $this->now->toDateString();
 
-        try {
-            if (isset($data['redownload']) &&
-                $data['redownload'] == 'false'
-            ) {
-                //File is already extracted
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                    return true;
+            try {
+                if (isset($data['redownload']) &&
+                    $data['redownload'] == 'false'
+                ) {
+                    //File is already extracted
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                        return true;
+                    }
+                } else {
+                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                        $this->localContent->delete($this->destDir . $today . '-funds.db');
+                    }
                 }
-            } else {
-                if ($this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                    $this->localContent->delete($this->sourceDir . $today . '-funds.db');
+
+                $file = $this->localContent->fileExists($this->destDir . $today . '-funds.db.zst');
+
+                if (!$file) {
+                    $this->addResponse('File not downloaded correctly', 1);
+
+                    return false;
                 }
-            }
+                //Decompress
+                exec('unzstd -d -f ' . base_path($this->destDir) . $today . '-funds.db.zst -o ' . base_path($this->destDir) . $today . '-funds.db', $output, $result);
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
+                    text: 'Decompressing...'
+                );
 
-            $file = $this->localContent->fileExists($this->sourceDir . $today . '-funds.db.zst');
+                //Create INDEXES
+                exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
+                    text: 'Generating Index...'
+                );
+                exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
+                    text: 'Generating Index...'
+                );
+                exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
+                    text: 'Generating Index...'
+                );
+                exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
+                    text: 'Generating Index...'
+                );
 
-            if (!$file) {
-                $this->addResponse('File not downloaded correctly', 1);
+                if ($result !== 0) {
+                    $this->addResponse('Error extracting file', 1, ['output' => $output]);
+
+                    return false;
+                }
+            } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
 
                 return false;
             }
-            //Decompress
-            exec('unzstd -d -f ' . base_path($this->sourceDir) . $today . '-funds.db.zst -o ' . base_path($this->sourceDir) . $today . '-funds.db', $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
-                text: 'Decompressing...'
-            );
-
-            //Create INDEXES
-            exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
-                text: 'Generating Index...'
-            );
-            exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
-                text: 'Generating Index...'
-            );
-            exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
-                text: 'Generating Index...'
-            );
-            exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->sourceDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
-                text: 'Generating Index...'
-            );
-
-            if ($result !== 0) {
-                $this->addResponse('Error extracting file', 1, ['output' => $output]);
-
-                return false;
-            }
-        } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
-
-            return false;
         }
 
         return true;
@@ -269,106 +306,227 @@ class MfExtractdata extends BasePackage
 
         $today = $this->now->toDateString();
 
-        try {
-            //File is already extracted
-            if (!$this->localContent->fileExists($this->sourceDir . $today . '-funds.db')) {
-                $this->addResponse('File not downloaded and extracted correctly!', 1);
+        if (isset($data['schemes']) &&
+            $data['schemes'] == 'true'
+        ) {
+            $this->schemesPackage = new MfSchemes;
+
+            $csv = Reader::createFromPath(base_path($this->destDir . $today . '-schemes.csv'));
+
+            $csv->setHeaderOffset(0);
+
+            $headersArr = $csv->getHeader();
+
+            $headers = [];
+
+            foreach ($headersArr as $headerValue) {
+                $headers[trim($headerValue)] = trim($headerValue);
+            }
+
+            $isinsTotal = count($csv);
+
+            foreach ($csv as $lineNo => $line) {
+                try {
+                    //Timer
+                    $this->basepackages->utils->setMicroTimer('Start');
+
+                    $isinArr = explode('INF', $line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment']);
+
+                    if (count($isinArr) === 0) {
+                        $this->addResponse('Cannot extract isin information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
+
+                        return false;
+                    }
+
+                    if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
+                        continue;
+                    }
+
+                    $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . $isinArr[1]);
+
+                    if ($scheme) {
+                        continue;
+                    }
+
+                    $scheme = [];
+
+                    $amc = $this->processAmcs($line);
+                    if (!$amc) {
+                        $this->addResponse('Cannot create new AMC information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
+
+                        return false;
+                    }
+
+                    $category = $this->processCategories($line);
+                    if (!$category) {
+                        $this->addResponse('Cannot create new category information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
+
+                        return false;
+                    }
+
+
+                    if (count($isinArr) === 2) {
+                        $scheme['isin'] = 'INF' . $isinArr[1];
+                    } else if (count($isinArr) === 3) {
+                        $scheme['isin'] = 'INF' . $isinArr[1];
+                        $scheme['isin_reinvest'] = 'INF' . $isinArr[2];
+                    }
+
+                    $scheme['amc_id'] = $amc['id'];
+                    $scheme['amfi_code'] = $line['Code'];
+                    $scheme['scheme_type'] = $line['Scheme Type'];
+                    $scheme['category_id'] = $category['id'];
+                    $scheme['name'] = $line['Scheme NAV Name'];
+                    if (str_contains(strtolower($line['Scheme NAV Name']), 'direct')) {
+                        $scheme['expense_ratio_type'] = 'Direct';
+                    } else if (str_contains(strtolower($line['Scheme NAV Name']), 'regular')) {
+                        $scheme['expense_ratio_type'] = 'Regular';
+                    } else {
+                        $scheme['expense_ratio_type'] = 'Direct';
+                    }
+                    if (str_contains(strtolower($line['Scheme NAV Name']), 'growth')) {
+                        $scheme['plan_type'] = 'Growth';
+                    } else if (str_contains(strtolower($line['Scheme NAV Name']), 'idcw') ||
+                               str_contains(strtolower($line['Scheme NAV Name']), 'dividend') ||
+                               str_contains(strtolower($line['Scheme NAV Name']), 'income distribution')
+                    ) {
+                        $scheme['plan_type'] = 'IDCW';
+                    } else {
+                        $scheme['plan_type'] = 'Growth';
+                    }
+                    if (str_contains(strtolower($line['Scheme NAV Name']), 'passive')) {
+                        $scheme['management_type'] = 'Passive';
+                    } else {
+                        $scheme['management_type'] = 'Active';
+                    }
+
+                    if (isset($scheme['id'])) {
+                        $this->schemesPackage->update($scheme);
+                    } else {
+                        $this->schemesPackage->add($scheme);
+                    }
+
+                    //Timer
+                    $this->basepackages->utils->setMicroTimer('End');
+                    $time = $this->basepackages->utils->getMicroTimer();
+                    if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
+                        $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $lineNo)));
+                    }
+                    $this->basepackages->utils->resetMicroTimer();
+                    $this->basepackages->progress->updateProgress(
+                        method: $this->method,
+                        counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($lineNo + 1)],
+                        text: 'Time remaining : ' . $totalTime . '...'
+                    );
+                } catch (\throwable $e) {
+                    trace([$line, $isinArr]);
+                    $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
+
+                    return false;
+                }
+            }
+        } else {
+            try {
+                //File is already extracted
+                if (!$this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                    $this->addResponse('File not downloaded and extracted correctly!', 1);
+
+                    return false;
+                }
+            } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
 
                 return false;
             }
-        } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
 
-            return false;
-        }
+            try {
+                $sqlite = (new Sqlite())->init(base_path($this->destDir . $today . '-funds.db'));
+            } catch (\throwable $e) {
+                $this->addResponse('Unable to open database file', 1);
 
-        try {
-            $sqlite = (new Sqlite())->init(base_path($this->sourceDir . $today . '-funds.db'));
-        } catch (\throwable $e) {
-            $this->addResponse('Unable to open database file', 1);
+                return false;
+            }
 
-            return false;
-        }
+            $this->navsPackage = new MfNavs;
 
-        $this->navsPackage = new MfNavs;
+            $isins = $sqlite->query("SELECT * from securities")->fetchAll(Enum::FETCH_ASSOC);
 
-        $isins = $sqlite->query("SELECT * from securities")->fetchAll(Enum::FETCH_ASSOC);
+            $isinsTotal = count($isins);
 
-        $isinsTotal = count($isins);
+            if ($isins && $isinsTotal > 0) {
+                foreach ($isins as $key => $isin) {
+                    $this->basepackages->utils->setMicroTimer('Start');
 
-        if ($isins && $isinsTotal > 0) {
-            foreach ($isins as $key => $isin) {
-                $this->basepackages->utils->setMicroTimer('Start');
+                    $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
 
-                $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
+                    $lastUpdated = $this->now->subDay(1)->toDateString();
 
-                $lastUpdated = $this->now->subDay(1)->toDateString();
+                    if (isset($data['reset']) && $data['reset'] == 'true') {
+                        $lastUpdated = '2000-01-01';
+                    }
 
-                if (isset($data['reset']) && $data['reset'] == 'true') {
-                    $lastUpdated = '2000-01-01';
-                }
+                    if (!$dbIsin) {
+                        $dbIsin = [];
+                        $dbIsin['type'] = $isin['type'];
+                        $dbIsin['scheme_code'] = $isin['scheme_code'];
+                        $dbIsin['isin'] = $isin['isin'];
+                        $dbIsin['navs'] = [];
+                    } else {
+                        $lastUpdated = $dbIsin['last_updated'];
+                    }
 
-                if (!$dbIsin) {
-                    $dbIsin = [];
-                    $dbIsin['type'] = $isin['type'];
-                    $dbIsin['scheme_code'] = $isin['scheme_code'];
-                    $dbIsin['isin'] = $isin['isin'];
-                    $dbIsin['navs'] = [];
-                } else {
-                    $lastUpdated = $dbIsin['last_updated'];
-                }
+                    $isin = $isin['isin'];
 
-                $isin = $isin['isin'];
+                    $isinNavs =
+                        $sqlite->query(
+                            "SELECT * from nav N
+                            JOIN securities S ON N.scheme_code = S.scheme_code
+                            WHERE S.isin = '$isin'
+                            AND N.date >= '$lastUpdated'
+                            ORDER BY N.date ASC"
+                        )->fetchAll(Enum::FETCH_ASSOC);
 
-                $isinNavs =
-                    $sqlite->query(
-                        "SELECT * from nav N
-                        JOIN securities S ON N.scheme_code = S.scheme_code
-                        WHERE S.isin = '$isin'
-                        AND N.date >= '$lastUpdated'
-                        ORDER BY N.date ASC"
-                    )->fetchAll(Enum::FETCH_ASSOC);
-
-                if ($isinNavs && count($isinNavs) > 0) {
-                    if ($this->helper->last($isinNavs)['date']) {
-                        $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
+                    if ($isinNavs && count($isinNavs) > 0) {
+                        if ($this->helper->last($isinNavs)['date']) {
+                            $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
+                        } else {
+                            $dbIsin['last_updated'] = $today;
+                        }
+                        if ($this->helper->last($isinNavs)['nav']) {
+                            $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
+                        } else {
+                            $dbIsin['latest_nav'] = 0;
+                        }
+                        foreach ($isinNavs as $isinNav) {
+                            $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
+                        }
                     } else {
                         $dbIsin['last_updated'] = $today;
-                    }
-                    if ($this->helper->last($isinNavs)['nav']) {
-                        $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
-                    } else {
                         $dbIsin['latest_nav'] = 0;
                     }
-                    foreach ($isinNavs as $isinNav) {
-                        $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
+
+                    if (isset($dbIsin['id'])) {
+                        $this->navsPackage->update($dbIsin);
+                    } else {
+                        $this->navsPackage->add($dbIsin);
                     }
-                } else {
-                    $dbIsin['last_updated'] = $today;
-                    $dbIsin['latest_nav'] = 0;
+
+                    $this->basepackages->utils->setMicroTimer('End');
+
+                    $time = $this->basepackages->utils->getMicroTimer();
+
+                    if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
+                        $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $key)));
+                    }
+
+                    $this->basepackages->utils->resetMicroTimer();
+
+                    $this->basepackages->progress->updateProgress(
+                        method: $this->method,
+                        counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($key + 1)],
+                        text: 'Time remaining : ' . $totalTime . '...'
+                    );
                 }
-
-                if (isset($dbIsin['id'])) {
-                    $this->navsPackage->update($dbIsin);
-                } else {
-                    $this->navsPackage->add($dbIsin);
-                }
-
-                $this->basepackages->utils->setMicroTimer('End');
-
-                $time = $this->basepackages->utils->getMicroTimer();
-
-                if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
-                    $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $key)));
-                }
-
-                $this->basepackages->utils->resetMicroTimer();
-
-                $this->basepackages->progress->updateProgress(
-                    method: $this->method,
-                    counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($key + 1)],
-                    text: 'Time remaining : ' . $totalTime . '...'
-                );
             }
         }
 
@@ -403,6 +561,13 @@ class MfExtractdata extends BasePackage
         // $method = 'getNiftySmappcap100Value';
         // $responseArr = $this->apiClient->useMethod($collection, $method, [])->getResponse();
 
+        //Rewrite:
+        //All active schemes are to be downloaded from the AMFIIndia website:
+        //https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0
+        //This will download a CSV file that needs to be parsed. File name: SchemeData2802250936SS (DateTimeSS)
+        //Information available in the file:
+        //AMC, Code, Scheme Name, Scheme Type, Scheme Category, Scheme NAV Name, Scheme Minimum Amount, Launch Date,  Closure Date, ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment
+        //With the above information, we can fill the AMCs database, Types database, Categories Database & Scheme Database (initial information of Name and ISIN)
         $getArr = true;
         if ($data['sync'] === 'schemeCategories') {
             $getArr = false;
@@ -425,143 +590,68 @@ class MfExtractdata extends BasePackage
         return false;
     }
 
-    protected function processSchemeCategories(array $responseArr)
-    {
-        $this->typesPackage = new MfTypes;
-        $this->categoriesPackage = new MfCategories;
-
-        $counter = [];
-        $counter['types'] = [];
-        $counter['types']['new'] = 0;
-        $counter['categories'] = [];
-        $counter['categories']['new'] = 0;
-        $counter['categories']['updated'] = 0;
-
-        foreach ($responseArr as $type => $categories) {
-            $searchType = $this->typesPackage->getMfTypeByName($type);
-
-            if (!$searchType) {
-                $newType['name'] = $type;
-
-                $this->typesPackage->add($newType);
-
-                $counter['types']['new'] = $counter['types']['new'] + 1;
-            }
-
-            if (count($categories) > 0) {
-                $typeCategories = [];
-
-                array_walk($categories, function($name, $index) use(&$typeCategories) {
-                    $typeCategories[$index]['category_name'] = $name;
-                    $typeCategories[$index]['report_date'] = $this->now->toDateString();
-                });
-
-                $this->processCategories($typeCategories, $counter, false);
-            }
-        }
-
-        $responseArr = $this->apiClient->useMethod('MutualFundsApi', 'getFundCategories', [])->getResponse(true);
-
-        if ($responseArr && count($responseArr) > 0) {
-            $this->processCategories($responseArr, $counter);
-        }
-
-        $this->addResponse('Synced categories. Added ' . $counter['types']['new'] . ' types. Added ' . $counter['categories']['new'] . ' categories. Updated ' . $counter['categories']['updated'] . ' categories.');
-
-        return true;
-    }
-
-    protected function processCategories(array $responseArr, &$counter, $update = true)
-    {
-        foreach ($responseArr as $response) {
-            $category = $this->categoriesPackage->getMfCategoryByName($response['category_name']);
-
-            if ($category) {
-                if ($update) {
-                    if ($category['report_date'] !== $response['report_date']) {
-                        $category = array_replace($category, $response);
-
-                        $this->categoriesPackage->update($category);
-
-                        $counter['categories']['updated'] = $counter['categories']['updated'] + 1;
-                    }
-                }
-            } else {
-                $category = $response;
-                $category['name'] = $category['category_name'];
-
-                $this->categoriesPackage->add($category);
-
-                $counter['categories']['new'] = $counter['categories']['new'] + 1;
-            }
-        }
-
-        return true;
-    }
-
-    protected function processAmcs(array $responseArr)
+    protected function processAmcs(array $data)
     {
         $this->amcsPackage = new MfAmcs;
 
-        $counter = [];
-        $counter['new'] = 0;
-        $counter['updated'] = 0;
+        $amc = $this->amcsPackage->getMfAmcByName($data['AMC']);
 
-        foreach ($responseArr as $response) {
-            $amc = $this->amcsPackage->getMfAmcByCode($response['AMC_code']);
+        if (!$amc) {
+            $amc = [];
+            $amc['name'] = $data['AMC'];
+
+            $amc = $this->amcsPackage->add($amc);
 
             if ($amc) {
-                $amc = array_replace($amc, $response);
-
-                $this->amcsPackage->update($amc);
-
-                $counter['updated'] = $counter['updated'] + 1;
-            } else {
-                $amc = $response;
-                $amc['amc_code'] = $amc['AMC_code'];
-
-                $this->amcsPackage->add($amc);
-
-                $counter['new'] = $counter['new'] + 1;
+                $amc = [];
+                $amc = $this->amcsPackage->packagesData->last;
             }
         }
 
-        $this->addResponse('Synced AMCs. Added ' . $counter['new'] . ' AMCs. Updated ' . $counter['updated'] . ' AMCs.');
-
-        return true;
+        return $amc;
     }
 
-    protected function processSchemes(array $responseArr)
+    protected function processCategories(array $data)
     {
-        trace([$responseArr]);
-        $this->typesPackage = new MfTypes;
+        $this->categoriesPackage = new MfCategories;
 
-        $counter = [];
-        $counter['new'] = 0;
-        $counter['updated'] = 0;
+        $categories = explode('-', $data['Scheme Category']);
 
-        foreach ($responseArr as $response) {
-            $amc = $this->amcsPackage->getMfAmcByCode($response['AMC_code']);
+        if ($categories && (count($categories) === 1 || count($categories) === 2)) {
+            array_walk($categories, function(&$category) {
+                $category = trim($category);
+            });
 
-            if ($amc) {
-                $amc = array_replace($amc, $response);
+            $parentCategory = $this->categoriesPackage->getMfCategoryByName($categories[0]);
 
-                $this->amcsPackage->update($amc);
+            if (!$parentCategory) {
+                $parentCategory = [];
+                $parentCategory['name'] = $categories[0];
 
-                $counter['updated'] = $counter['updated'] + 1;
-            } else {
-                $amc = $response;
-                $amc['amc_code'] = $amc['AMC_code'];
+                $this->categoriesPackage->add($parentCategory);
 
-                $this->amcsPackage->add($amc);
-
-                $counter['new'] = $counter['new'] + 1;
+                $parentCategory = $this->categoriesPackage->packagesData->last;
             }
+
+            if (count($categories) === 2) {
+                $childCategory = $this->categoriesPackage->getMfCategoryByName($categories[1]);
+
+                if (!$childCategory) {
+                    $childCategory = [];
+                    $childCategory['name'] = $categories[1];
+                    $childCategory['parent_id'] = $parentCategory['id'];
+
+                    $this->categoriesPackage->add($childCategory);
+
+                    $childCategory = $this->categoriesPackage->packagesData->last;
+                }
+                return $childCategory;
+            }
+
+            return $parentCategory;
         }
 
-        $this->addResponse('Synced AMCs. Added ' . $counter['new'] . ' AMCs. Updated ' . $counter['updated'] . ' AMCs.');
-
-        return true;
+        return false;
     }
 
     protected function processGold($data)
@@ -569,7 +659,7 @@ class MfExtractdata extends BasePackage
         $today = $this->now->toDateString();
 
         try {
-            if ($this->localContent->fileExists($this->sourceDir . 'gold-' . $today . '.json')) {
+            if ($this->localContent->fileExists($this->destDir . 'gold-' . $today . '.json')) {
                 $this->addResponse('File for ' . $today . ' already exists and imported.', 1);
 
                 return false;
@@ -600,7 +690,7 @@ class MfExtractdata extends BasePackage
 
         if ($response->getStatusCode() === 200) {
             try {
-                $this->localContent->write($this->sourceDir . 'gold-' . $today . '.json', $response->getBody()->getContents());
+                $this->localContent->write($this->destDir . 'gold-' . $today . '.json', $response->getBody()->getContents());
             } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
                 $this->addResponse($e->getmessage(), 1);
 
