@@ -339,12 +339,14 @@ class MfExtractdata extends BasePackage
                     }
 
                     if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
-                        continue;
+                        $isinArr[1] = 'UNKNOWN_' . $lineNo;
                     }
 
                     $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . $isinArr[1]);
 
                     if ($scheme) {
+                        $this->processUpdateTimer($isinsTotal, $lineNo);
+
                         continue;
                     }
 
@@ -407,25 +409,18 @@ class MfExtractdata extends BasePackage
                     }
 
                     //Timer
-                    $this->basepackages->utils->setMicroTimer('End');
-                    $time = $this->basepackages->utils->getMicroTimer();
-                    if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
-                        $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $lineNo)));
-                    }
-                    $this->basepackages->utils->resetMicroTimer();
-                    $this->basepackages->progress->updateProgress(
-                        method: $this->method,
-                        counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($lineNo + 1)],
-                        text: 'Time remaining : ' . $totalTime . '...'
-                    );
+                    $this->processUpdateTimer($isinsTotal, $lineNo);
                 } catch (\throwable $e) {
-                    trace([$line, $isinArr]);
                     $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
 
                     return false;
                 }
             }
-        } else {
+        }
+
+        if (isset($data['redownload']) &&
+            $data['redownload'] == 'true'
+        ) {
             try {
                 //File is already extracted
                 if (!$this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
@@ -449,7 +444,7 @@ class MfExtractdata extends BasePackage
 
             $this->navsPackage = new MfNavs;
 
-            $isins = $sqlite->query("SELECT * from securities")->fetchAll(Enum::FETCH_ASSOC);
+            $isins = $sqlite->query("SELECT * from securities WHERE type = '0'")->fetchAll(Enum::FETCH_ASSOC);
 
             $isinsTotal = count($isins);
 
@@ -457,80 +452,89 @@ class MfExtractdata extends BasePackage
                 foreach ($isins as $key => $isin) {
                     $this->basepackages->utils->setMicroTimer('Start');
 
-                    $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
+                    $scheme = $this->schemesPackage->getMfTypeByIsin($isin['isin']);
 
-                    $lastUpdated = $this->now->subDay(1)->toDateString();
+                    if ($scheme) {
+                        $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
 
-                    if (isset($data['reset']) && $data['reset'] == 'true') {
-                        $lastUpdated = '2000-01-01';
-                    }
+                        $lastUpdated = $this->now->subDay(1)->toDateString();
 
-                    if (!$dbIsin) {
-                        $dbIsin = [];
-                        $dbIsin['type'] = $isin['type'];
-                        $dbIsin['scheme_code'] = $isin['scheme_code'];
-                        $dbIsin['isin'] = $isin['isin'];
-                        $dbIsin['navs'] = [];
-                    } else {
-                        $lastUpdated = $dbIsin['last_updated'];
-                    }
+                        if (isset($data['reset']) && $data['reset'] == 'true') {
+                            $lastUpdated = '2000-01-01';
+                        }
 
-                    $isin = $isin['isin'];
+                        if (!$dbIsin) {
+                            $dbIsin = [];
+                            $dbIsin['type'] = $isin['type'];
+                            $dbIsin['scheme_code'] = $isin['scheme_code'];
+                            $dbIsin['isin'] = $isin['isin'];
+                            $dbIsin['navs'] = [];
+                        } else {
+                            $lastUpdated = $dbIsin['last_updated'];
+                        }
 
-                    $isinNavs =
-                        $sqlite->query(
-                            "SELECT * from nav N
-                            JOIN securities S ON N.scheme_code = S.scheme_code
-                            WHERE S.isin = '$isin'
-                            AND N.date >= '$lastUpdated'
-                            ORDER BY N.date ASC"
-                        )->fetchAll(Enum::FETCH_ASSOC);
+                        $isin = $isin['isin'];
 
-                    if ($isinNavs && count($isinNavs) > 0) {
-                        if ($this->helper->last($isinNavs)['date']) {
-                            $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
+                        $isinNavs =
+                            $sqlite->query(
+                                "SELECT * from nav N
+                                JOIN securities S ON N.scheme_code = S.scheme_code
+                                WHERE S.isin = '$isin'
+                                AND N.date >= '$lastUpdated'
+                                ORDER BY N.date ASC"
+                            )->fetchAll(Enum::FETCH_ASSOC);
+
+                        if ($isinNavs && count($isinNavs) > 0) {
+                            if ($this->helper->last($isinNavs)['date']) {
+                                $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
+                            } else {
+                                $dbIsin['last_updated'] = $today;
+                            }
+                            if ($this->helper->last($isinNavs)['nav']) {
+                                $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
+                            } else {
+                                $dbIsin['latest_nav'] = 0;
+                            }
+                            foreach ($isinNavs as $isinNav) {
+                                $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
+                            }
                         } else {
                             $dbIsin['last_updated'] = $today;
-                        }
-                        if ($this->helper->last($isinNavs)['nav']) {
-                            $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
-                        } else {
                             $dbIsin['latest_nav'] = 0;
                         }
-                        foreach ($isinNavs as $isinNav) {
-                            $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
+
+                        if (isset($dbIsin['id'])) {
+                            $this->navsPackage->update($dbIsin);
+                        } else {
+                            $this->navsPackage->add($dbIsin);
                         }
-                    } else {
-                        $dbIsin['last_updated'] = $today;
-                        $dbIsin['latest_nav'] = 0;
                     }
 
-                    if (isset($dbIsin['id'])) {
-                        $this->navsPackage->update($dbIsin);
-                    } else {
-                        $this->navsPackage->add($dbIsin);
-                    }
-
-                    $this->basepackages->utils->setMicroTimer('End');
-
-                    $time = $this->basepackages->utils->getMicroTimer();
-
-                    if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
-                        $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $key)));
-                    }
-
-                    $this->basepackages->utils->resetMicroTimer();
-
-                    $this->basepackages->progress->updateProgress(
-                        method: $this->method,
-                        counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($key + 1)],
-                        text: 'Time remaining : ' . $totalTime . '...'
-                    );
+                    $this->processUpdateTimer($isinsTotal, $key);
                 }
             }
         }
 
         return true;
+    }
+
+    protected function processUpdateTimer($isinsTotal, $lineNo)
+    {
+        $this->basepackages->utils->setMicroTimer('End');
+
+        $time = $this->basepackages->utils->getMicroTimer();
+
+        if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
+            $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $lineNo)));
+        }
+
+        $this->basepackages->utils->resetMicroTimer();
+
+        $this->basepackages->progress->updateProgress(
+            method: $this->method,
+            counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($lineNo + 1)],
+            text: 'Time remaining : ' . $totalTime . '...'
+        );
     }
 
     public function sync($data)
