@@ -310,18 +310,19 @@ class MfExtractdata extends BasePackage
         if (isset($data['schemes']) &&
             $data['schemes'] == 'true'
         ) {
-            $this->schemesPackage = new MfSchemes;
+            try {
+                $this->schemesPackage = new MfSchemes;
 
-            $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $today . '-schemes.csv'));
-            $csv->setHeaderOffset(0);
+                $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $today . '-schemes.csv'));
+                $csv->setHeaderOffset(0);
 
-            $statement = (new Statement())->orderByAsc('AMC');
-            $records = $statement->process($csv);
+                $statement = (new Statement())->orderByAsc('AMC');
+                $records = $statement->process($csv);
 
-            $isinsTotal = count($records);
-            $lineNo = 1;
-            foreach ($records as $line) {
-                try {
+                $isinsTotal = count($records);
+                $lineNo = 1;
+
+                foreach ($records as $line) {
                     //Timer
                     $this->basepackages->utils->setMicroTimer('Start');
 
@@ -341,6 +342,8 @@ class MfExtractdata extends BasePackage
                     if ($scheme) {
                         $this->processUpdateTimer($isinsTotal, $lineNo);
 
+                        $lineNo++;
+
                         continue;
                     }
 
@@ -348,6 +351,11 @@ class MfExtractdata extends BasePackage
 
                     $amc = $this->processAmcs($line);
                     if (!$amc) {
+                        $this->basepackages->progress->setErrors([
+                            'error' => 'Cannot create new AMC information for line# ' . $lineNo,
+                            'line' => $this->helper->encode($line)
+                        ]);
+
                         $this->addResponse('Cannot create new AMC information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
 
                         return false;
@@ -355,11 +363,15 @@ class MfExtractdata extends BasePackage
 
                     $category = $this->processCategories($line);
                     if (!$category) {
+                        $this->basepackages->progress->setErrors([
+                            'error' => 'Cannot create new category information for line# ' . $lineNo,
+                            'line' => $this->helper->encode($line)
+                        ]);
+
                         $this->addResponse('Cannot create new category information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
 
                         return false;
                     }
-
 
                     if (count($isinArr) === 2) {
                         $scheme['isin'] = 'INF' . $isinArr[1];
@@ -406,11 +418,19 @@ class MfExtractdata extends BasePackage
                     $this->processUpdateTimer($isinsTotal, $lineNo);
 
                     $lineNo++;
-                } catch (\throwable $e) {
-                    $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
-
-                    return false;
                 }
+            } catch (\throwable $e) {
+                $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
+
+                $errors['exception'] = $this->helper->encode($e);
+                $errors['lineNo'] = $lineNo;
+                $errors['line'] = $this->helper->encode($line);
+
+                $this->basepackages->progress->setErrors($errors);
+
+                $this->basepackages->progress->resetProgress();
+
+                return false;
             }
         }
 
