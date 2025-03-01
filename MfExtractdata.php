@@ -330,11 +330,11 @@ class MfExtractdata extends BasePackage
 
                     if (count($isinArr) === 0) {
                         $isinArr[0] = '';
-                        $isinArr[1] = 'UNKNOWN_' . $lineNo;
+                        $isinArr[1] = 'INF_' . hash('md5', $line['Scheme NAV Name']);
                     }
 
                     if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
-                        $isinArr[1] = 'UNKNOWN_' . $lineNo;
+                        $isinArr[1] = 'INF_' . hash('md5', $line['Scheme NAV Name']);
                     }
 
                     $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . $isinArr[1]);
