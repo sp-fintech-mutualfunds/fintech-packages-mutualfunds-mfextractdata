@@ -337,7 +337,7 @@ class MfExtractdata extends BasePackage
                         $isinArr[1] = 'INF_' . hash('md5', $line['Scheme NAV Name']);
                     }
 
-                    $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . $isinArr[1]);
+                    $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . trim($isinArr[1]));
 
                     if ($scheme) {
                         $this->processUpdateTimer($isinsTotal, $lineNo);
@@ -374,10 +374,10 @@ class MfExtractdata extends BasePackage
                     }
 
                     if (count($isinArr) === 2) {
-                        $scheme['isin'] = 'INF' . $isinArr[1];
+                        $scheme['isin'] = 'INF' . trim($isinArr[1]);
                     } else if (count($isinArr) === 3) {
-                        $scheme['isin'] = 'INF' . $isinArr[1];
-                        $scheme['isin_reinvest'] = 'INF' . $isinArr[2];
+                        $scheme['isin'] = 'INF' . trim($isinArr[1]);
+                        $scheme['isin_reinvest'] = 'INF' . trim($isinArr[2]);
                     }
 
                     $scheme['amc_id'] = $amc['id'];
