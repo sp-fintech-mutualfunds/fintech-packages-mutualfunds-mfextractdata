@@ -430,7 +430,7 @@ class MfExtractdata extends BasePackage
 
                 $this->basepackages->progress->resetProgress();
 
-                return false;
+                throw $e;
             }
         }
 
