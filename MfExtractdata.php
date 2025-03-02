@@ -340,11 +340,21 @@ class MfExtractdata extends BasePackage
                     $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . trim($isinArr[1]));
 
                     if ($scheme) {
-                        $this->processUpdateTimer($isinsTotal, $lineNo);
+                        if ($scheme['amfi_code'] == $line['Code']) {
+                            $this->processUpdateTimer($isinsTotal, $lineNo);
 
-                        $lineNo++;
+                            $lineNo++;
 
-                        continue;
+                            continue;
+                        } else {
+                            //We found a duplicate entry in the CSV file with different amfi_code
+                            if (count($isinArr) === 2) {
+                                $isinArr[1] = 'INF' . trim($isinArr[1]) . '_duplicate';
+                            } else if (count($isinArr) === 3) {
+                                $isinArr[1] = 'INF' . trim($isinArr[1]) . '_duplicate';
+                                $isinArr[2] = 'INF' . trim($isinArr[2]) . '_duplicate';
+                            }
+                        }
                     }
 
                     $scheme = [];
