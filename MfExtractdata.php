@@ -44,8 +44,6 @@ class MfExtractdata extends BasePackage
 
     protected $amcsPackage;
 
-    protected $typesPackage;
-
     protected $schemesPackage;
 
     public function onConstruct()
@@ -90,15 +88,13 @@ class MfExtractdata extends BasePackage
         }
     }
 
-    protected function downloadMfData($data)
+    protected function downloadMfData($downloadSchemes = true, $downloadNav = false)
     {
         $this->method = 'downloadMfData';
 
         $today = $this->now->toDateString();
 
-        if (isset($data['schemes']) &&
-            $data['schemes'] == 'true'
-        ) {
+        if ($downloadSchemes) {
             $this->sourceLink = 'https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0';
 
             $this->destFile = base_path($this->destDir) . $today . '-schemes.csv';
@@ -119,43 +115,31 @@ class MfExtractdata extends BasePackage
 
                 return false;
             }
-        } else {
+        }
+
+        if ($downloadNav) {
             $this->sourceLink = 'https://github.com/captn3m0/historical-mf-data/releases/latest/download/funds.db.zst';
 
             $this->destFile = base_path($this->destDir) . $today . '-funds.db.zst';
 
             try {
-                if (isset($data['redownload']) &&
-                    $data['redownload'] == 'false'
-                ) {
-                    //File is already extracted
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                //File is already downloaded
+                if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
+                    $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+
+                    $localSize = $this->localContent->fileSize($this->destDir . $today . '-funds.db.zst');
+
+                    if ($remoteSize === $localSize) {
                         return true;
                     }
+                }
 
-                    //File is already downloaded
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
-                        return true;
-                    }
-                } else {
-                    //File is already downloaded
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
-                        $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+                if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                    $this->localContent->delete($this->destDir . $today . '-funds.db');
+                }
 
-                        $localSize = $this->localContent->fileSize($this->destDir . $today . '-funds.db.zst');
-
-                        if ($remoteSize === $localSize) {
-                            return true;
-                        }
-                    }
-
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
-                        $this->localContent->delete($this->destDir . $today . '-funds.db');
-                    }
-
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
-                        $this->localContent->delete($this->destDir . $today . '-funds.db.zst');
-                    }
+                if ($this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
+                    $this->localContent->delete($this->destDir . $today . '-funds.db.zst');
                 }
             } catch (FilesystemException | UnableToCheckExistence | UnableToDeleteFile | UnableToRetrieveMetadata | \throwable $e) {
                 $this->addResponse($e->getMessage(), 1);
@@ -222,94 +206,78 @@ class MfExtractdata extends BasePackage
         return false;
     }
 
-    protected function extractMfData($data)
+    protected function extractMfData()
     {
         $this->method = 'extractMfData';
 
-        if (isset($data['redownload']) &&
-            $data['redownload'] == 'true'
-        ) {
-            $today = $this->now->toDateString();
+        $today = $this->now->toDateString();
 
-            try {
-                if (isset($data['redownload']) &&
-                    $data['redownload'] == 'false'
-                ) {
-                    //File is already extracted
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
-                        return true;
-                    }
-                } else {
-                    if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
-                        $this->localContent->delete($this->destDir . $today . '-funds.db');
-                    }
-                }
+        try {
+            if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                $this->localContent->delete($this->destDir . $today . '-funds.db');
+            }
 
-                $file = $this->localContent->fileExists($this->destDir . $today . '-funds.db.zst');
-
-                if (!$file) {
-                    $this->addResponse('File not downloaded correctly', 1);
-
-                    return false;
-                }
-                //Decompress
-                exec('unzstd -d -f ' . base_path($this->destDir) . $today . '-funds.db.zst -o ' . base_path($this->destDir) . $today . '-funds.db', $output, $result);
-                $this->basepackages->progress->updateProgress(
-                    method: $this->method,
-                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
-                    text: 'Decompressing...'
-                );
-
-                //Create INDEXES
-                exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-                $this->basepackages->progress->updateProgress(
-                    method: $this->method,
-                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
-                    text: 'Generating Index...'
-                );
-                exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-                $this->basepackages->progress->updateProgress(
-                    method: $this->method,
-                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
-                    text: 'Generating Index...'
-                );
-                exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-                $this->basepackages->progress->updateProgress(
-                    method: $this->method,
-                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
-                    text: 'Generating Index...'
-                );
-                exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-                $this->basepackages->progress->updateProgress(
-                    method: $this->method,
-                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
-                    text: 'Generating Index...'
-                );
-
-                if ($result !== 0) {
-                    $this->addResponse('Error extracting file', 1, ['output' => $output]);
-
-                    return false;
-                }
-            } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
-                $this->addResponse($e->getMessage(), 1);
+            if (!$this->localContent->fileExists($this->destDir . $today . '-funds.db.zst')) {
+                $this->addResponse('File not downloaded correctly', 1);
 
                 return false;
             }
+
+            //Decompress
+            exec('unzstd -d -f ' . base_path($this->destDir) . $today . '-funds.db.zst -o ' . base_path($this->destDir) . $today . '-funds.db', $output, $result);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
+                text: 'Decompressing...'
+            );
+
+            //Create INDEXES
+            exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
+                text: 'Generating Index...'
+            );
+            exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
+                text: 'Generating Index...'
+            );
+            exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
+                text: 'Generating Index...'
+            );
+            exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
+                text: 'Generating Index...'
+            );
+
+            if ($result !== 0) {
+                $this->addResponse('Error extracting file', 1, ['output' => $output]);
+
+                return false;
+            }
+        } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
+            $this->addResponse($e->getMessage(), 1);
+
+            return false;
         }
 
         return true;
     }
 
-    protected function processMfData($data)
+    protected function processMfData($downloadSchemes = true, $downloadNav = false, $data = [])
     {
         $this->method = 'processMfData';
 
         $today = $this->now->toDateString();
 
-        if (isset($data['schemes']) &&
-            $data['schemes'] == 'true'
-        ) {
+        if ($downloadSchemes) {
             try {
                 $this->schemesPackage = new MfSchemes;
 
@@ -444,9 +412,7 @@ class MfExtractdata extends BasePackage
             }
         }
 
-        if (isset($data['redownload']) &&
-            $data['redownload'] == 'true'
-        ) {
+        if ($downloadNav) {
             try {
                 //File is already extracted
                 if (!$this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
@@ -469,74 +435,218 @@ class MfExtractdata extends BasePackage
             }
 
             $this->navsPackage = new MfNavs;
+            $this->schemesPackage = new MfSchemes;
 
-            $isins = $sqlite->query("SELECT * from securities WHERE type = '0'")->fetchAll(Enum::FETCH_ASSOC);
+            $lastUpdated = $this->now->subDay(7)->toDateString();
 
-            $isinsTotal = count($isins);
+            if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+                $lastUpdated = '2000-01-01';
+            }
 
-            if ($isins && $isinsTotal > 0) {
-                foreach ($isins as $key => $isin) {
+            if (isset($data['scheme_id'])) {
+                $dbCount = 1;
+            } else {
+                $dbCount = $this->schemesPackage->getDbCount(true);
+            }
+
+            if ($dbCount > 0) {
+                for ($i = 1; $i <= $dbCount; $i++) {
                     $this->basepackages->utils->setMicroTimer('Start');
 
-                    $scheme = $this->schemesPackage->getMfTypeByIsin($isin['isin']);
-
-                    if ($scheme) {
-                        $dbIsin = $this->navsPackage->getMfNavsByIsin($isin['isin']);
-
-                        $lastUpdated = $this->now->subDay(1)->toDateString();
-
-                        if (isset($data['reset']) && $data['reset'] == 'true') {
-                            $lastUpdated = '2000-01-01';
-                        }
-
-                        if (!$dbIsin) {
-                            $dbIsin = [];
-                            $dbIsin['type'] = $isin['type'];
-                            $dbIsin['scheme_code'] = $isin['scheme_code'];
-                            $dbIsin['isin'] = $isin['isin'];
-                            $dbIsin['navs'] = [];
-                        } else {
-                            $lastUpdated = $dbIsin['last_updated'];
-                        }
-
-                        $isin = $isin['isin'];
-
-                        $isinNavs =
-                            $sqlite->query(
-                                "SELECT * from nav N
-                                JOIN securities S ON N.scheme_code = S.scheme_code
-                                WHERE S.isin = '$isin'
-                                AND N.date >= '$lastUpdated'
-                                ORDER BY N.date ASC"
-                            )->fetchAll(Enum::FETCH_ASSOC);
-
-                        if ($isinNavs && count($isinNavs) > 0) {
-                            if ($this->helper->last($isinNavs)['date']) {
-                                $dbIsin['last_updated'] = $this->helper->last($isinNavs)['date'];
-                            } else {
-                                $dbIsin['last_updated'] = $today;
-                            }
-                            if ($this->helper->last($isinNavs)['nav']) {
-                                $dbIsin['latest_nav'] = $this->helper->last($isinNavs)['nav'];
-                            } else {
-                                $dbIsin['latest_nav'] = 0;
-                            }
-                            foreach ($isinNavs as $isinNav) {
-                                $dbIsin['navs'][$isinNav['date']] = $isinNav['nav'];
-                            }
-                        } else {
-                            $dbIsin['last_updated'] = $today;
-                            $dbIsin['latest_nav'] = 0;
-                        }
-
-                        if (isset($dbIsin['id'])) {
-                            $this->navsPackage->update($dbIsin);
-                        } else {
-                            $this->navsPackage->add($dbIsin);
-                        }
+                    if (isset($data['scheme_id'])) {
+                        $scheme = $this->schemesPackage->getById((int) $data['scheme_id']);
+                    } else {
+                        $scheme = $this->schemesPackage->getById($i);
                     }
 
-                    $this->processUpdateTimer($isinsTotal, $key);
+                    if ($scheme) {
+                        $amfiCode = $scheme['amfi_code'];
+
+                        $amfiNavs = $sqlite->query(
+                            "SELECT * from nav N
+                            JOIN securities S ON N.scheme_code = S.scheme_code
+                            WHERE S.scheme_code = '" . $amfiCode . "' AND S.type = '0'
+                            AND N.date >= '$lastUpdated'
+                            ORDER BY N.date ASC"
+                        )->fetchAll(Enum::FETCH_ASSOC);
+
+                        if (!$amfiNavs) {
+                            continue;
+                        }
+
+                        $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
+
+                        if (!$dbNav) {
+                            $dbNav = [];
+                            $dbNav['amfi_code'] = $scheme['amfi_code'];
+                            $dbNav['isin'] = $scheme['isin'];
+                            $dbNav['navs'] = [];
+                        } else {
+                            $lastUpdated = $dbNav['last_updated'];
+
+                            if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+                                $dbNav['navs'] = [];
+                            }
+                        }
+
+                        if ($amfiNavs && count($amfiNavs) > 0) {
+                            if ($this->helper->last($amfiNavs)['date']) {
+                                $dbNav['last_updated'] = $this->helper->last($amfiNavs)['date'];
+                            } else {
+                                $dbNav['last_updated'] = $today;
+                            }
+
+                            if ($this->helper->last($amfiNavs)['nav']) {
+                                $dbNav['latest_nav'] = $this->helper->last($amfiNavs)['nav'];
+                            } else {
+                                $dbNav['latest_nav'] = 0;
+                            }
+
+                            foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
+                                if (!isset($dbNav['navs'][$amfiNav['date']])) {
+                                    $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
+                                    $dbNav['navs'][$amfiNav['date']]['date'] = $amfiNav['date'];
+                                    $dbNav['navs'][$amfiNav['date']]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
+
+                                    if (isset($amfiNavs[$amfiNavKey + 1])) {
+                                        $currentDate = \Carbon\Carbon::parse($amfiNav['date']);
+                                        $nextDate = \Carbon\Carbon::parse($amfiNavs[$amfiNavKey + 1]['date']);
+                                        $differenceDays = $currentDate->diffInDays($nextDate);
+
+                                        if ($differenceDays > 1) {
+                                            for ($days = 1; $days < $differenceDays; $days++) {
+                                                $missingDay = $currentDate->addDay(1)->toDateString();
+                                                if (!isset($dbNav['navs'][$missingDay])) {
+                                                    $dbNav['navs'][$missingDay]['nav'] = $amfiNav['nav'];
+                                                    $dbNav['navs'][$missingDay]['date'] = $missingDay;
+                                                    $dbNav['navs'][$missingDay]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if ($amfiNavKey !== 0) {
+                                        $previousDay = $amfiNavs[$amfiNavKey - 1];
+
+                                        $dbNav['navs'][$amfiNav['date']]['diff'] =
+                                            (float) number_format($amfiNav['nav'] - $previousDay['nav'], 4, '.', '');
+                                        $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
+                                            (float) number_format(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2, '.', '');
+
+                                        $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
+                                        if ($amfiNav['nav'] > $previousDay['nav']) {
+                                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'up';
+                                        } else {
+                                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'down';
+                                        }
+
+                                        if ($amfiNavKey === $this->helper->lastKey($amfiNavs)) {
+                                            $dbNav['diff'] = $dbNav['navs'][$amfiNav['date']]['diff'];
+                                            $dbNav['diff_percent'] = $dbNav['navs'][$amfiNav['date']]['diff_percent'];
+                                            $dbNav['trajectory'] = $dbNav['navs'][$amfiNav['date']]['trajectory'];
+                                        }
+                                    }
+                                }
+                            }
+
+                            $dbNav['navs'] = msort($dbNav['navs'], 'timestamp');
+
+                            $totalNavs = count($dbNav['navs']);
+
+                            if ($totalNavs > 1) {
+                                if ($totalNavs > 7) {
+                                    $weekCounterStart = $totalNavs - 7;
+                                } else {
+                                    $weekCounterStart = $totalNavs;
+                                }
+
+                                $dbNav['navs_chunks']['week'] = [];
+                                for ($forWeek = $weekCounterStart; $forWeek < $totalNavs; $forWeek++) {
+                                    $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']] = [];
+                                    $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['date'] = $dbNav['navs'][$forWeek]['date'];
+                                    $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['nav'] = $dbNav['navs'][$forWeek]['nav'];
+                                }
+                            }
+
+                            if ($totalNavs > 7) {
+                                if ($totalNavs > 30) {
+                                    $monthCounterStart = $totalNavs - 30;
+                                } else {
+                                    $monthCounterStart = $totalNavs;
+                                }
+
+                                $dbNav['navs_chunks']['month'] = [];
+                                for ($forMonth = $monthCounterStart; $forMonth < $totalNavs; $forMonth++) {
+                                    $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']] = [];
+                                    $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']]['date'] = $dbNav['navs'][$forMonth]['date'];
+                                    $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']]['nav'] = $dbNav['navs'][$forMonth]['nav'];
+                                }
+                            }
+
+                            if ($totalNavs > 30) {
+                                if ($totalNavs > 365) {
+                                    $yearCounterStart = $totalNavs - 365;
+                                } else {
+                                    $yearCounterStart = $totalNavs;
+                                }
+
+                                $dbNav['navs_chunks']['year'] = [];
+                                for ($forYear = $yearCounterStart; $forYear < $totalNavs; $forYear++) {
+                                    $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']] = [];
+                                    $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']]['date'] = $dbNav['navs'][$forYear]['date'];
+                                    $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']]['nav'] = $dbNav['navs'][$forYear]['nav'];
+                                }
+                            }
+
+                            if ($totalNavs > 365) {
+                                if ($totalNavs > 1095) {
+                                    $threeYearCounterStart = $totalNavs - 1095;
+                                } else {
+                                    $threeYearCounterStart = $totalNavs;
+                                }
+
+                                $dbNav['navs_chunks']['threeYear'] = [];
+                                for ($forThreeYear = $threeYearCounterStart; $forThreeYear < $totalNavs; $forThreeYear++) {
+                                    $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']] = [];
+                                    $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']]['date'] = $dbNav['navs'][$forThreeYear]['date'];
+                                    $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']]['nav'] = $dbNav['navs'][$forThreeYear]['nav'];
+                                }
+                            }
+
+                            if ($totalNavs > 1095) {
+                                if ($totalNavs > 1825) {
+                                    $fiveYearCounterStart = $totalNavs - 1825;
+                                } else {
+                                    $fiveYearCounterStart = $totalNavs;
+                                }
+
+                                $dbNav['navs_chunks']['fiveYear'] = [];
+                                for ($forFiveYear = $fiveYearCounterStart; $forFiveYear < $totalNavs; $forFiveYear++) {
+                                    $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']] = [];
+                                    $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']]['date'] = $dbNav['navs'][$forFiveYear]['date'];
+                                    $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']]['nav'] = $dbNav['navs'][$forFiveYear]['nav'];
+                                }
+                            }
+
+                            $dbNav['navs_chunks']['all'] = [];
+                            for ($forAll = 1; $forAll < $totalNavs; $forAll++) {
+                                $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']] = [];
+                                $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']]['date'] = $dbNav['navs'][$forAll]['date'];
+                                $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']]['nav'] = $dbNav['navs'][$forAll]['nav'];
+                            }
+                        } else {
+                            $dbNav['last_updated'] = $today;
+                            $dbNav['latest_nav'] = 0;
+                        }
+
+                        if (isset($dbNav['id'])) {
+                            $this->navsPackage->update($dbNav);
+                        } else {
+                            $this->navsPackage->add($dbNav);
+                        }
+
+                        $this->processUpdateTimer($dbCount, $i);
+                    }
                 }
             }
         }
