@@ -305,7 +305,7 @@ class MfExtractdata extends BasePackage
                         $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
                     }
 
-                    $scheme = $this->schemesPackage->getMfTypeByIsin('INF' . trim($isinArr[1]));
+                    $scheme = $this->schemesPackage->getMfTypeByAmfiCode($line['Code']);
 
                     if ($scheme) {
                         if ($scheme['amfi_code'] == $line['Code']) {
@@ -400,7 +400,7 @@ class MfExtractdata extends BasePackage
             } catch (\throwable $e) {
                 $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
 
-                $errors['exception'] = $this->helper->encode($e);
+                $errors['exception'] = $e->getMessage();
                 $errors['lineNo'] = $lineNo;
                 $errors['line'] = $this->helper->encode($line);
 
