@@ -46,6 +46,8 @@ class MfExtractdata extends BasePackage
 
     protected $schemesPackage;
 
+    protected $mfFileSizeMatch = false;
+
     public function onConstruct()
     {
         if (!is_dir(base_path($this->destDir))) {
@@ -130,6 +132,8 @@ class MfExtractdata extends BasePackage
                     $localSize = $this->localContent->fileSize($this->destDir . $today . '-funds.db.zst');
 
                     if ($remoteSize === $localSize) {
+                        $this->mfFileSizeMatch = true;
+
                         return true;
                     }
                 }
@@ -214,6 +218,10 @@ class MfExtractdata extends BasePackage
 
         try {
             if ($this->localContent->fileExists($this->destDir . $today . '-funds.db')) {
+                if ($this->mfFileSizeMatch) {//If compressed file match, the decompressed and indexed will also match.
+                    return true;
+                }
+
                 $this->localContent->delete($this->destDir . $today . '-funds.db');
             }
 
@@ -561,7 +569,7 @@ class MfExtractdata extends BasePackage
                                 }
 
                                 $dbNav['navs_chunks']['week'] = [];
-                                for ($forWeek = $weekCounterStart; $forWeek < $totalNavs; $forWeek++) {
+                                for ($forWeek = 0; $forWeek < $totalNavs; $forWeek++) {
                                     $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']] = [];
                                     $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['date'] = $dbNav['navs'][$forWeek]['date'];
                                     $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['nav'] = $dbNav['navs'][$forWeek]['nav'];
@@ -629,7 +637,7 @@ class MfExtractdata extends BasePackage
                             }
 
                             $dbNav['navs_chunks']['all'] = [];
-                            for ($forAll = 1; $forAll < $totalNavs; $forAll++) {
+                            for ($forAll = 0; $forAll < $totalNavs; $forAll++) {
                                 $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']] = [];
                                 $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']]['date'] = $dbNav['navs'][$forAll]['date'];
                                 $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']]['nav'] = $dbNav['navs'][$forAll]['nav'];
