@@ -562,13 +562,13 @@ class MfExtractdata extends BasePackage
 
                             if ($totalNavs > 1) {
                                 if ($totalNavs > 7) {
-                                    $weekCounterStart = $totalNavs - 7;
+                                    $forWeek = $totalNavs - 7;
                                 } else {
-                                    $weekCounterStart = $totalNavs;
+                                    $forWeek = $totalNavs;
                                 }
 
                                 $dbNav['navs_chunks']['week'] = [];
-                                for ($forWeek = 0; $forWeek < $totalNavs; $forWeek++) {
+                                for ($forWeek; $forWeek < $totalNavs; $forWeek++) {
                                     $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']] = [];
                                     $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['date'] = $dbNav['navs'][$forWeek]['date'];
                                     $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['nav'] = $dbNav['navs'][$forWeek]['nav'];
@@ -577,13 +577,13 @@ class MfExtractdata extends BasePackage
 
                             if ($totalNavs > 7) {
                                 if ($totalNavs > 30) {
-                                    $monthCounterStart = $totalNavs - 30;
+                                    $forMonth = $totalNavs - 30;
                                 } else {
-                                    $monthCounterStart = $totalNavs;
+                                    $forMonth = $totalNavs;
                                 }
 
                                 $dbNav['navs_chunks']['month'] = [];
-                                for ($forMonth = $monthCounterStart; $forMonth < $totalNavs; $forMonth++) {
+                                for ($forMonth; $forMonth < $totalNavs; $forMonth++) {
                                     $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']] = [];
                                     $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']]['date'] = $dbNav['navs'][$forMonth]['date'];
                                     $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']]['nav'] = $dbNav['navs'][$forMonth]['nav'];
@@ -592,13 +592,13 @@ class MfExtractdata extends BasePackage
 
                             if ($totalNavs > 30) {
                                 if ($totalNavs > 365) {
-                                    $yearCounterStart = $totalNavs - 365;
+                                    $forYear = $totalNavs - 365;
                                 } else {
-                                    $yearCounterStart = $totalNavs;
+                                    $forYear = $totalNavs;
                                 }
 
                                 $dbNav['navs_chunks']['year'] = [];
-                                for ($forYear = $yearCounterStart; $forYear < $totalNavs; $forYear++) {
+                                for ($forYear; $forYear < $totalNavs; $forYear++) {
                                     $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']] = [];
                                     $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']]['date'] = $dbNav['navs'][$forYear]['date'];
                                     $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']]['nav'] = $dbNav['navs'][$forYear]['nav'];
@@ -607,13 +607,13 @@ class MfExtractdata extends BasePackage
 
                             if ($totalNavs > 365) {
                                 if ($totalNavs > 1095) {
-                                    $threeYearCounterStart = $totalNavs - 1095;
+                                    $forThreeYear = $totalNavs - 1095;
                                 } else {
-                                    $threeYearCounterStart = $totalNavs;
+                                    $forThreeYear = $totalNavs;
                                 }
 
                                 $dbNav['navs_chunks']['threeYear'] = [];
-                                for ($forThreeYear = $threeYearCounterStart; $forThreeYear < $totalNavs; $forThreeYear++) {
+                                for ($forThreeYear; $forThreeYear < $totalNavs; $forThreeYear++) {
                                     $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']] = [];
                                     $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']]['date'] = $dbNav['navs'][$forThreeYear]['date'];
                                     $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']]['nav'] = $dbNav['navs'][$forThreeYear]['nav'];
@@ -622,13 +622,13 @@ class MfExtractdata extends BasePackage
 
                             if ($totalNavs > 1095) {
                                 if ($totalNavs > 1825) {
-                                    $fiveYearCounterStart = $totalNavs - 1825;
+                                    $forFiveYear = $totalNavs - 1825;
                                 } else {
-                                    $fiveYearCounterStart = $totalNavs;
+                                    $forFiveYear = $totalNavs;
                                 }
 
                                 $dbNav['navs_chunks']['fiveYear'] = [];
-                                for ($forFiveYear = $fiveYearCounterStart; $forFiveYear < $totalNavs; $forFiveYear++) {
+                                for ($forFiveYear; $forFiveYear < $totalNavs; $forFiveYear++) {
                                     $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']] = [];
                                     $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']]['date'] = $dbNav['navs'][$forFiveYear]['date'];
                                     $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']]['nav'] = $dbNav['navs'][$forFiveYear]['nav'];
