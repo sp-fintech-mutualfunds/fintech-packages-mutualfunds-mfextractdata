@@ -487,7 +487,6 @@ class MfExtractdata extends BasePackage
                         if (!$dbNav) {
                             $dbNav = [];
                             $dbNav['amfi_code'] = $scheme['amfi_code'];
-                            $dbNav['isin'] = $scheme['isin'];
                             $dbNav['navs'] = [];
                         } else {
                             $lastUpdated = $dbNav['last_updated'];
