@@ -747,7 +747,7 @@ class MfExtractdata extends BasePackage
             $amc = [];
             $amc['name'] = $data['AMC'];
 
-            $amc = $this->amcsPackage->add($amc);
+            $amc = $this->amcsPackage->addMfAmcs($amc);
 
             if ($amc) {
                 $amc = [];
@@ -775,7 +775,7 @@ class MfExtractdata extends BasePackage
                 $parentCategory = [];
                 $parentCategory['name'] = $categories[0];
 
-                $this->categoriesPackage->add($parentCategory);
+                $this->categoriesPackage->addMfCategories($parentCategory);
 
                 $parentCategory = $this->categoriesPackage->packagesData->last;
             }
@@ -788,7 +788,7 @@ class MfExtractdata extends BasePackage
                     $childCategory['name'] = $categories[1];
                     $childCategory['parent_id'] = $parentCategory['id'];
 
-                    $this->categoriesPackage->add($childCategory);
+                    $this->categoriesPackage->addMfCategories($childCategory);
 
                     $childCategory = $this->categoriesPackage->packagesData->last;
                 }
