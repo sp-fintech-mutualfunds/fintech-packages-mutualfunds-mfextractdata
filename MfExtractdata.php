@@ -575,9 +575,9 @@ class MfExtractdata extends BasePackage
                                 }
                             }
 
-                            $dbNav['navs'] = msort($dbNav['navs'], 'timestamp');
+                            $dbNavNavs = msort($dbNav['navs'], 'timestamp');
 
-                            $totalNavs = count($dbNav['navs']);
+                            $totalNavs = count($dbNavNavs);
 
                             if ($totalNavs > 1) {
                                 if ($totalNavs > 7) {
@@ -588,9 +588,9 @@ class MfExtractdata extends BasePackage
 
                                 $dbNav['navs_chunks']['week'] = [];
                                 for ($forWeek; $forWeek < $totalNavs; $forWeek++) {
-                                    $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']] = [];
-                                    $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['date'] = $dbNav['navs'][$forWeek]['date'];
-                                    $dbNav['navs_chunks']['week'][$dbNav['navs'][$forWeek]['date']]['nav'] = $dbNav['navs'][$forWeek]['nav'];
+                                    $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']] = [];
+                                    $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['date'] = $dbNavNavs[$forWeek]['date'];
+                                    $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['nav'] = $dbNavNavs[$forWeek]['nav'];
                                 }
                             }
 
@@ -603,9 +603,9 @@ class MfExtractdata extends BasePackage
 
                                 $dbNav['navs_chunks']['month'] = [];
                                 for ($forMonth; $forMonth < $totalNavs; $forMonth++) {
-                                    $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']] = [];
-                                    $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']]['date'] = $dbNav['navs'][$forMonth]['date'];
-                                    $dbNav['navs_chunks']['month'][$dbNav['navs'][$forMonth]['date']]['nav'] = $dbNav['navs'][$forMonth]['nav'];
+                                    $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']] = [];
+                                    $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['date'] = $dbNavNavs[$forMonth]['date'];
+                                    $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['nav'] = $dbNavNavs[$forMonth]['nav'];
                                 }
                             }
 
@@ -618,9 +618,9 @@ class MfExtractdata extends BasePackage
 
                                 $dbNav['navs_chunks']['year'] = [];
                                 for ($forYear; $forYear < $totalNavs; $forYear++) {
-                                    $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']] = [];
-                                    $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']]['date'] = $dbNav['navs'][$forYear]['date'];
-                                    $dbNav['navs_chunks']['year'][$dbNav['navs'][$forYear]['date']]['nav'] = $dbNav['navs'][$forYear]['nav'];
+                                    $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']] = [];
+                                    $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['date'] = $dbNavNavs[$forYear]['date'];
+                                    $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['nav'] = $dbNavNavs[$forYear]['nav'];
                                 }
                             }
 
@@ -633,9 +633,9 @@ class MfExtractdata extends BasePackage
 
                                 $dbNav['navs_chunks']['threeYear'] = [];
                                 for ($forThreeYear; $forThreeYear < $totalNavs; $forThreeYear++) {
-                                    $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']] = [];
-                                    $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']]['date'] = $dbNav['navs'][$forThreeYear]['date'];
-                                    $dbNav['navs_chunks']['threeYear'][$dbNav['navs'][$forThreeYear]['date']]['nav'] = $dbNav['navs'][$forThreeYear]['nav'];
+                                    $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']] = [];
+                                    $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['date'] = $dbNavNavs[$forThreeYear]['date'];
+                                    $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['nav'] = $dbNavNavs[$forThreeYear]['nav'];
                                 }
                             }
 
@@ -648,17 +648,17 @@ class MfExtractdata extends BasePackage
 
                                 $dbNav['navs_chunks']['fiveYear'] = [];
                                 for ($forFiveYear; $forFiveYear < $totalNavs; $forFiveYear++) {
-                                    $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']] = [];
-                                    $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']]['date'] = $dbNav['navs'][$forFiveYear]['date'];
-                                    $dbNav['navs_chunks']['fiveYear'][$dbNav['navs'][$forFiveYear]['date']]['nav'] = $dbNav['navs'][$forFiveYear]['nav'];
+                                    $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']] = [];
+                                    $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['date'] = $dbNavNavs[$forFiveYear]['date'];
+                                    $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['nav'] = $dbNavNavs[$forFiveYear]['nav'];
                                 }
                             }
 
                             $dbNav['navs_chunks']['all'] = [];
                             for ($forAll = 0; $forAll < $totalNavs; $forAll++) {
-                                $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']] = [];
-                                $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']]['date'] = $dbNav['navs'][$forAll]['date'];
-                                $dbNav['navs_chunks']['all'][$dbNav['navs'][$forAll]['date']]['nav'] = $dbNav['navs'][$forAll]['nav'];
+                                $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']] = [];
+                                $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['date'] = $dbNavNavs[$forAll]['date'];
+                                $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['nav'] = $dbNavNavs[$forAll]['nav'];
                             }
                         } else {
                             $dbNav['last_updated'] = $today;
