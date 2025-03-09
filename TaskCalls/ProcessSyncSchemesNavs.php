@@ -63,6 +63,10 @@ class ProcessSyncSchemesNavs extends Calls
                 return;
             }
 
+            $thisCall->packagesData->responseMessage = $mfExtractDataPackage->packagesData->responseMessage ?? 'Ok';
+
+            $thisCall->packagesData->responseCode = $mfExtractDataPackage->packagesData->responseCode ?? 0;
+
             $this->addJobResult($mfExtractDataPackage->packagesData->responseData ?? [], $args);
 
             $thisCall->updateJobTask(3, $args);
