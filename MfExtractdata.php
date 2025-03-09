@@ -74,19 +74,23 @@ class MfExtractdata extends BasePackage
     public function __call($method, $arguments)
     {
         if (method_exists($this, $method)) {
-            $this->basepackages->progress->updateProgress($method, null, false);
+            if (PHP_SAPI !== 'cli') {
+                $this->basepackages->progress->updateProgress($method, null, false);
 
-            $call = call_user_func_array([$this, $method], $arguments);
+                $call = call_user_func_array([$this, $method], $arguments);
 
-            $callResult = $call;
+                $callResult = $call;
 
-            if ($call !== false) {
-                $call = true;
+                if ($call !== false) {
+                    $call = true;
+                }
+
+                $this->basepackages->progress->updateProgress($method, $call, false);
+
+                return $callResult;
             }
 
-            $this->basepackages->progress->updateProgress($method, $call, false);
-
-            return $callResult;
+            call_user_func_array([$this, $method], $arguments);
         }
     }
 
@@ -187,10 +191,12 @@ class MfExtractdata extends BasePackage
 
                     $this->trackCounter = $downloadedBytes;
 
-                    if ($downloadedBytes === $downloadTotal) {
-                        $this->basepackages->progress->updateProgress($this->method, true, false, null, $counters);
-                    } else {
-                        $this->basepackages->progress->updateProgress($this->method, null, false, null, $counters);
+                    if (PHP_SAPI !== 'cli') {
+                        if ($downloadedBytes === $downloadTotal) {
+                            $this->basepackages->progress->updateProgress($this->method, true, false, null, $counters);
+                        } else {
+                            $this->basepackages->progress->updateProgress($this->method, null, false, null, $counters);
+                        }
                     }
                 },
                 'verify'            => false,
@@ -233,37 +239,50 @@ class MfExtractdata extends BasePackage
 
             //Decompress
             exec('unzstd -d -f ' . base_path($this->destDir) . $today . '-funds.db.zst -o ' . base_path($this->destDir) . $today . '-funds.db', $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
-                text: 'Decompressing...'
-            );
+            if (PHP_SAPI !== 'cli') {
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 1],
+                    text: 'Decompressing...'
+                );
+            }
 
             //Create INDEXES
             exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
-                text: 'Generating Index...'
-            );
+            if (PHP_SAPI !== 'cli') {
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
+                    text: 'Generating Index...'
+                );
+            }
+
             exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
-                text: 'Generating Index...'
-            );
+            if (PHP_SAPI !== 'cli') {
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
+                    text: 'Generating Index...'
+                );
+            }
+
             exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
-                text: 'Generating Index...'
-            );
+            if (PHP_SAPI !== 'cli') {
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
+                    text: 'Generating Index...'
+                );
+            }
+
             exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
-            $this->basepackages->progress->updateProgress(
-                method: $this->method,
-                counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
-                text: 'Generating Index...'
-            );
+            if (PHP_SAPI !== 'cli') {
+                $this->basepackages->progress->updateProgress(
+                    method: $this->method,
+                    counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
+                    text: 'Generating Index...'
+                );
+            }
 
             if ($result !== 0) {
                 $this->addResponse('Error extracting file', 1, ['output' => $output]);
@@ -673,11 +692,13 @@ class MfExtractdata extends BasePackage
 
         $this->basepackages->utils->resetMicroTimer();
 
-        $this->basepackages->progress->updateProgress(
-            method: $this->method,
-            counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($lineNo + 1)],
-            text: 'Time remaining : ' . $totalTime . '...'
-        );
+        if (PHP_SAPI !== 'cli') {
+            $this->basepackages->progress->updateProgress(
+                method: $this->method,
+                counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($lineNo + 1)],
+                text: 'Time remaining : ' . $totalTime . '...'
+            );
+        }
     }
 
     public function sync($data)
