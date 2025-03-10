@@ -121,6 +121,9 @@ class MfExtractdata extends BasePackage
 
                 return false;
             }
+
+            //Perform Old files cleanup
+            // $this->cleanup('schemes');
         }
 
         if ($downloadNav) {
@@ -154,6 +157,9 @@ class MfExtractdata extends BasePackage
 
                 return false;
             }
+
+            //Perform Old files cleanup
+            // $this->cleanup('navs');
         }
 
         return $this->downloadData($this->sourceLink, $this->destFile);
