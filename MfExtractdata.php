@@ -707,12 +707,33 @@ class MfExtractdata extends BasePackage
             return $this->processGold($data);
         }
 
-        if (!$this->initApi($data)) {
-            $this->addResponse('Could not initialize the API.', 1);
+        if (isset($data['api_id'])) {
+            if (!$this->initApi($data)) {
+                $this->addResponse('Could not initialize the API.', 1);
 
-            return false;
+                return false;
+            }
         }
 
+        if (strtolower($this->apiClientConfig['provider']) === 'kuvera') {
+            if (isset($data['sync']) && $data['sync'] === 'getSchemeDetails') {
+                $kuveraMappings = $this->getKuveraMapping();
+
+                if (isset($kuveraMappings[strtolower($data['isin'])])) {
+                    $collection = 'MutualFundsApi';
+                    $method = 'getFundSchemeDetails';
+                    $args = [strtolower($kuveraMappings[strtolower($data['isin'])])];
+
+                    $responseArr = $this->apiClient->useMethod($collection, $method, $args)->getResponse(true);
+
+                    if ($responseArr && isset($responseArr[0])) {
+                        return $responseArr[0];
+                    }
+                }
+            }
+
+            return [];
+        }
 
         // Scheme Details
         // $method = 'getFundSchemeDetails';
@@ -736,24 +757,24 @@ class MfExtractdata extends BasePackage
         //Information available in the file:
         //AMC, Code, Scheme Name, Scheme Type, Scheme Category, Scheme NAV Name, Scheme Minimum Amount, Launch Date,  Closure Date, ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment
         //With the above information, we can fill the AMCs database, Types database, Categories Database & Scheme Database (initial information of Name and ISIN)
-        $getArr = true;
-        if ($data['sync'] === 'schemeCategories') {
-            $getArr = false;
-        }
+        // $getArr = true;
+        // if ($data['sync'] === 'schemeCategories') {
+        //     $getArr = false;
+        // }
 
-        $method = 'getFund' . ucfirst($data['sync']);
+        // $method = 'getFund' . ucfirst($data['sync']);
 
-        $responseArr = $this->apiClient->useMethod('MutualFundsApi', $method, [])->getResponse($getArr);
+        // $responseArr = $this->apiClient->useMethod('MutualFundsApi', $method, [])->getResponse($getArr);
 
-        if ($responseArr && count($responseArr) > 0) {
-            $process = 'process' . ucfirst($data['sync']);
+        // if ($responseArr && count($responseArr) > 0) {
+        //     $process = 'process' . ucfirst($data['sync']);
 
-            $this->$process($responseArr);
+        //     $this->$process($responseArr);
 
-            return true;
-        }
+        //     return true;
+        // }
 
-        $this->addResponse('Error processing sync', 1);
+        // $this->addResponse('Error processing sync', 1);
 
         return false;
     }
@@ -975,5 +996,48 @@ class MfExtractdata extends BasePackage
         }
 
         return $apisArr;
+    }
+
+    protected function getKuveraMapping()
+    {
+        $today = $this->now->toDateString();
+
+        $this->sourceLink = 'https://raw.githubusercontent.com/captn3m0/india-mutual-funds-info/refs/heads/main/data.csv';
+
+        $this->destFile = base_path($this->destDir) . $today . '-kuvera.csv';
+
+        try {
+            //File is already downloaded
+            if ($this->localContent->fileExists($this->destDir . $today . '-kuvera.csv')) {
+                $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+
+                $localSize = $this->localContent->fileSize($this->destDir . $today . '-kuvera.csv');
+
+                if ($remoteSize !== $localSize) {
+                    $this->downloadData($this->sourceLink, $this->destFile);
+                }
+            } else {
+                $this->downloadData($this->sourceLink, $this->destFile);
+            }
+
+            $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $today . '-kuvera.csv'));
+            $csv->setHeaderOffset(0);
+
+            $records = $csv->getRecords();
+
+            $mappings = [];
+
+            foreach ($records as $line) {
+                if (!isset($mappings[strtolower($line['ISIN'])])) {
+                    $mappings[strtolower($line['ISIN'])] = strtolower($line['code']);
+                }
+            }
+
+            return $mappings;
+        } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | \throwable $e) {
+            $this->addResponse($e->getMessage(), 1);
+
+            return false;
+        }
     }
 }
