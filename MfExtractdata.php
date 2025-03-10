@@ -253,6 +253,10 @@ class MfExtractdata extends BasePackage
                 );
             }
 
+            if ($result !== 0) {
+                return $this->extractionFail($output);
+            }
+
             //Create INDEXES
             exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
             if (PHP_SAPI !== 'cli') {
@@ -261,6 +265,10 @@ class MfExtractdata extends BasePackage
                     counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
                     text: 'Generating Index...'
                 );
+            }
+
+            if ($result !== 0) {
+                return $this->extractionFail($output);
             }
 
             exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
@@ -272,6 +280,10 @@ class MfExtractdata extends BasePackage
                 );
             }
 
+            if ($result !== 0) {
+                return $this->extractionFail($output);
+            }
+
             exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
             if (PHP_SAPI !== 'cli') {
                 $this->basepackages->progress->updateProgress(
@@ -279,6 +291,10 @@ class MfExtractdata extends BasePackage
                     counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
                     text: 'Generating Index...'
                 );
+            }
+
+            if ($result !== 0) {
+                return $this->extractionFail($output);
             }
 
             exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $today . "-funds.db", $output, $result);
@@ -291,9 +307,7 @@ class MfExtractdata extends BasePackage
             }
 
             if ($result !== 0) {
-                $this->addResponse('Error extracting file', 1, ['output' => $output]);
-
-                return false;
+                return $this->extractionFail($output);
             }
         } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
             $this->addResponse($e->getMessage(), 1);
@@ -302,6 +316,13 @@ class MfExtractdata extends BasePackage
         }
 
         return true;
+    }
+
+    protected function extractionFail($output)
+    {
+        $this->addResponse('Error extracting file', 1, ['output' => $output]);
+
+        return false;
     }
 
     protected function processMfData($downloadSchemes = true, $downloadNav = false, $data = [])
@@ -1013,6 +1034,7 @@ class MfExtractdata extends BasePackage
         $this->destFile = base_path($this->destDir) . $today . '-kuvera.csv';
 
         try {
+            $download = false;
             //File is already downloaded
             if ($this->localContent->fileExists($this->destDir . $today . '-kuvera.csv')) {
                 $remoteSize = (int) getRemoteFilesize($this->sourceLink);
@@ -1021,26 +1043,50 @@ class MfExtractdata extends BasePackage
 
                 if ($remoteSize !== $localSize) {
                     $this->downloadData($this->sourceLink, $this->destFile);
+
+                    $download = true;
                 }
             } else {
                 $this->downloadData($this->sourceLink, $this->destFile);
+
+                $download = true;
             }
-
-            $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $today . '-kuvera.csv'));
-            $csv->setHeaderOffset(0);
-
-            $records = $csv->getRecords();
 
             $mappings = [];
 
-            foreach ($records as $line) {
-                if (!isset($mappings[strtolower($line['ISIN'])])) {
-                    $mappings[strtolower($line['ISIN'])] = strtolower($line['code']);
+            if ($this->opCache) {
+                $mappings = $this->opCache->getCache('mappings', 'mfmappings');
+            } else {
+                $mappings = $this->helper->decode($this->localContent->read('/var/mfmappings/mappings.json'), true);
+            }
+
+            if (!$mappings ||
+                ($mappings && count($mappings) === 0)
+            ) {
+                if (!$mappings) {
+                    $mappings = [];
+                }
+
+                $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $today . '-kuvera.csv'));
+                $csv->setHeaderOffset(0);
+
+                $records = $csv->getRecords();
+
+                foreach ($records as $line) {
+                    if (!isset($mappings[strtolower($line['ISIN'])])) {
+                        $mappings[strtolower($line['ISIN'])] = strtolower($line['code']);
+                    }
+                }
+
+                if ($this->opCache) {
+                    $this->opCache->setCache('mappings', $mappings, 'mfmappings');
+                } else {
+                    $this->localContent->write('var/mfmappings/mappings.json' , $this->helper->encode($mappings));
                 }
             }
 
             return $mappings;
-        } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | \throwable $e) {
+        } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | UnableToReadFile | UnableToWriteFile | \throwable $e) {
             $this->addResponse($e->getMessage(), 1);
 
             return false;
