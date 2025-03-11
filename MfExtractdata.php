@@ -123,7 +123,9 @@ class MfExtractdata extends BasePackage
             }
 
             //Perform Old files cleanup
-            // $this->cleanup('schemes');
+            if (!$this->cleanup('schemes', $today)) {
+                return false;
+            }
         }
 
         if ($downloadNav) {
@@ -159,7 +161,9 @@ class MfExtractdata extends BasePackage
             }
 
             //Perform Old files cleanup
-            // $this->cleanup('navs');
+           if (!$this->cleanup('funds', $today)) {
+                return false;
+            }
         }
 
         return $this->downloadData($this->sourceLink, $this->destFile);
@@ -220,6 +224,29 @@ class MfExtractdata extends BasePackage
         $this->addResponse('Download resulted in : ' . $download->getStatusCode(), 1);
 
         return false;
+    }
+
+    protected function cleanup($type, $today)
+    {
+        try {
+            $scanDir = $this->basepackages->utils->scanDir($this->destDir);
+
+            if ($scanDir && count($scanDir['files']) > 0) {
+                foreach ($scanDir['files'] as $file) {
+                    if (!str_starts_with($file, $today) &&
+                        str_contains($file, $type)
+                    ) {
+                        $this->localContent->delete($file);
+                    }
+                }
+            }
+        } catch (UnableToDeleteFile | \throwable | FilesystemException $e) {
+            $this->addResponse($e->getMessage(), 1);
+
+            return false;
+        }
+
+        return true;
     }
 
     protected function extractMfData()
@@ -875,7 +902,7 @@ class MfExtractdata extends BasePackage
         $today = $this->now->toDateString();
 
         try {
-            if ($this->localContent->fileExists($this->destDir . 'gold-' . $today . '.json')) {
+            if ($this->localContent->fileExists($this->destDir . $today . '-gold' . '.json')) {
                 $this->addResponse('File for ' . $today . ' already exists and imported.', 1);
 
                 return false;
@@ -906,7 +933,7 @@ class MfExtractdata extends BasePackage
 
         if ($response->getStatusCode() === 200) {
             try {
-                $this->localContent->write($this->destDir . 'gold-' . $today . '.json', $response->getBody()->getContents());
+                $this->localContent->write($this->destDir . $today . '-gold' . '.json', $response->getBody()->getContents());
             } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
                 $this->addResponse($e->getmessage(), 1);
 
@@ -917,6 +944,13 @@ class MfExtractdata extends BasePackage
 
             return false;
         }
+
+        //Perform Old files cleanup
+       if (!$this->cleanup('gold', $today)) {
+            return false;
+        }
+
+        $this->addResponse('Imported Gold information successfully');
 
         return true;
     }
