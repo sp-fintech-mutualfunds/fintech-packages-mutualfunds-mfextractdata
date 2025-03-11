@@ -5,8 +5,8 @@
 	"module_type" : "packages",
 	"app_type" : "fintech",
 	"category" : "mutualfunds",
-	"version" : "0.29.0",
-	"repo" : "https://github.com/sp-fintech/fintech-packages-mutualfunds-mfextractdata",
+	"version" : "0.30.0",
+	"repo" : "https://github.com/sp-fintech-mutualfunds/fintech-packages-mutualfunds-mfextractdata",
 	"class" : "Apps\\Fintech\\Packages\\Mf\\Extractdata\\MfExtractdata",
 	"dependencies" : 
 	{
