@@ -655,6 +655,12 @@ class MfExtractdata extends BasePackage
             try {
                 //File not exists, redownload
                 if (!$this->localContent->fileExists($this->destDir . $this->today . '-funds.db')) {
+                    if (count($data) > 0) {
+                        $this->addResponse('Download the latest funds file using Extractdata!', 1);
+
+                        return false;
+                    }
+
                     $this->downloadMfData(false, false, true);
                     $this->extractMfData();
                 }
