@@ -541,23 +541,7 @@ class MfExtractdata extends BasePackage
         }
 
         if ($processLatestNav && count($data) === 0) {
-            try {
-                //File not exists, redownload
-                if (!$this->localContent->fileExists($this->destDir . $this->today . '-latest.db')) {
-                    $this->downloadMfData(false, true);
-                    $this->extractMfData();
-                }
-            } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
-                $this->addResponse($e->getMessage(), 1);
-
-                return false;
-            }
-
-            try {
-                $sqlite = (new Sqlite())->init(base_path($this->destDir . $this->today . '-latest.db'));
-            } catch (\throwable $e) {
-                $this->addResponse('Unable to open database file', 1);
-
+            if (!$sqlite = $this->initDb('latest', $data)) {
                 return false;
             }
 
@@ -587,8 +571,12 @@ class MfExtractdata extends BasePackage
                         )->fetchAll(Enum::FETCH_ASSOC);
 
                         if (!$amfiNavs) {
+                            $this->processUpdateTimer($dbCount, $i);
+
                             continue;
                         }
+
+                        $amfiNavs = $this->fillAmfiNavDays($amfiNavs);
 
                         $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
 
@@ -635,7 +623,7 @@ class MfExtractdata extends BasePackage
 
                             $this->createChunks($dbNav);
                         } else {
-                            $dbNav['last_updated'] = $today;
+                            $dbNav['last_updated'] = $this->today;
                             $dbNav['latest_nav'] = 0;
                         }
 
@@ -652,29 +640,7 @@ class MfExtractdata extends BasePackage
         }
 
         if ($processAllNav) {
-            try {
-                //File not exists, redownload
-                if (!$this->localContent->fileExists($this->destDir . $this->today . '-funds.db')) {
-                    if (count($data) > 0) {
-                        $this->addResponse('Download the latest funds file using Extractdata!', 1);
-
-                        return false;
-                    }
-
-                    $this->downloadMfData(false, false, true);
-                    $this->extractMfData();
-                }
-            } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
-                $this->addResponse($e->getMessage(), 1);
-
-                return false;
-            }
-
-            try {
-                $sqlite = (new Sqlite())->init(base_path($this->destDir . $this->today . '-funds.db'));
-            } catch (\throwable $e) {
-                $this->addResponse('Unable to open database file', 1);
-
+            if (!$sqlite = $this->initDb('funds', $data)) {
                 return false;
             }
 
@@ -715,8 +681,12 @@ class MfExtractdata extends BasePackage
                         )->fetchAll(Enum::FETCH_ASSOC);
 
                         if (!$amfiNavs) {
+                            $this->processUpdateTimer($dbCount, $i);
+
                             continue;
                         }
+
+                        $amfiNavs = $this->fillAmfiNavDays($amfiNavs);
 
                         $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
 
@@ -728,15 +698,24 @@ class MfExtractdata extends BasePackage
                             $lastUpdated = $dbNav['last_updated'];
 
                             if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
-                                $dbNav['navs'] = [];
+                                if (!isset($dbNav['navs'])) {
+                                    $dbNav['navs'] = [];
+                                }
                             }
                         }
-
                         if ($amfiNavs && count($amfiNavs) > 0) {
+                            if (!isset($data['get_all_navs']) &&
+                                $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
+                            ) {
+                                $this->processUpdateTimer($dbCount, $i);
+
+                                continue;
+                            }
+
                             if ($this->helper->last($amfiNavs)['date']) {
                                 $dbNav['last_updated'] = $this->helper->last($amfiNavs)['date'];
                             } else {
-                                $dbNav['last_updated'] = $today;
+                                $dbNav['last_updated'] = $this->today;
                             }
 
                             if ($this->helper->last($amfiNavs)['nav']) {
@@ -745,28 +724,15 @@ class MfExtractdata extends BasePackage
                                 $dbNav['latest_nav'] = 0;
                             }
 
+                            $newdata = false;
+
                             foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
+                                // trace([array_reverse($amfiNavs)]);
                                 if (!isset($dbNav['navs'][$amfiNav['date']])) {
+                                    $newdata = true;
                                     $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
                                     $dbNav['navs'][$amfiNav['date']]['date'] = $amfiNav['date'];
                                     $dbNav['navs'][$amfiNav['date']]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
-
-                                    if (isset($amfiNavs[$amfiNavKey + 1])) {
-                                        $currentDate = \Carbon\Carbon::parse($amfiNav['date']);
-                                        $nextDate = \Carbon\Carbon::parse($amfiNavs[$amfiNavKey + 1]['date']);
-                                        $differenceDays = $currentDate->diffInDays($nextDate);
-
-                                        if ($differenceDays > 1) {
-                                            for ($days = 1; $days < $differenceDays; $days++) {
-                                                $missingDay = $currentDate->addDay(1)->toDateString();
-                                                if (!isset($dbNav['navs'][$missingDay])) {
-                                                    $dbNav['navs'][$missingDay]['nav'] = $amfiNav['nav'];
-                                                    $dbNav['navs'][$missingDay]['date'] = $missingDay;
-                                                    $dbNav['navs'][$missingDay]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
-                                                }
-                                            }
-                                        }
-                                    }
 
                                     if ($amfiNavKey !== 0) {
                                         $previousDay = $amfiNavs[$amfiNavKey - 1];
@@ -791,14 +757,22 @@ class MfExtractdata extends BasePackage
                                     }
                                 }
                             }
+                            // die();
+                            if (!$newdata) {
+                                $this->processUpdateTimer($dbCount, $i);
+
+                                continue;
+                            }
 
                             $this->createChunks($dbNav);
                         } else {
-                            $dbNav['last_updated'] = $today;
+                            $dbNav['last_updated'] = $this->today;
                             $dbNav['latest_nav'] = 0;
                         }
 
                         if (isset($dbNav['id'])) {
+                            $dbNav['navs'] = msort(array: $dbNav['navs'], key: 'timestamp', preserveKey: true);
+
                             $this->navsPackage->update($dbNav);
                         } else {
                             $this->navsPackage->add($dbNav);
@@ -899,6 +873,102 @@ class MfExtractdata extends BasePackage
             $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']] = [];
             $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['date'] = $dbNavNavs[$forAll]['date'];
             $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['nav'] = $dbNavNavs[$forAll]['nav'];
+        }
+    }
+
+    protected function fillAmfiNavDays($amfiNavsArr)
+    {
+        $firstDate = \Carbon\Carbon::parse($this->helper->first($amfiNavsArr)['date']);
+        $lastDate = \Carbon\Carbon::parse($this->helper->last($amfiNavsArr)['date']);
+
+        $numberOfDays = $firstDate->diffInDays($lastDate) + 1;//Include last day in calculation
+
+        if ($numberOfDays != count($amfiNavsArr)) {
+            $amfiNavs = [];
+
+            foreach ($amfiNavsArr as $amfiNavKey => $amfiNav) {
+                $amfiNavs[] = $amfiNav;
+
+                if (isset($amfiNavsArr[$amfiNavKey + 1])) {
+                    $currentDate = \Carbon\Carbon::parse($amfiNav['date']);
+                    $nextDate = \Carbon\Carbon::parse($amfiNavsArr[$amfiNavKey + 1]['date']);
+                    $differenceDays = $currentDate->diffInDays($nextDate);
+
+                    if ($differenceDays > 1) {
+                        for ($days = 1; $days < $differenceDays; $days++) {
+                            $missingDay = $currentDate->addDay(1)->toDateString();
+
+                            if (!isset($amfiNavs[$missingDay])) {
+                                $amfiNav['date'] = $missingDay;
+
+                                array_push($amfiNavs, $amfiNav);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ($numberOfDays != count($amfiNavs)) {
+                throw new \Exception('Cannot process missing AMFI navs correctly');
+            }
+
+            return $amfiNavs;
+        }
+
+        return $amfiNavsArr;
+    }
+
+    protected function initDb($type, $data = [])
+    {
+        try {
+            $scanDir = $this->basepackages->utils->scanDir($this->destDir, false);
+
+            if ($scanDir && count($scanDir['files']) > 0) {
+                foreach ($scanDir['files'] as $file) {
+                    if (str_ends_with($file, '-' . $type . '.db')) {
+                        try {
+                            return (new Sqlite())->init(base_path($file));
+                        } catch (\throwable $e) {
+                            $this->addResponse('Unable to open database file', 1);
+
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            if (count($data) > 0) {
+                $type === 'funds';
+            }
+
+            //File not exists, redownload
+            if (!$this->localContent->fileExists($this->destDir . $this->today . '-' . $type . '.db')) {
+                if (count($data) > 0) {
+                    $this->addResponse('Download the latest funds file using Extractdata!', 1);
+
+                    return false;
+                }
+
+                if ($type === 'latest') {
+                    $this->downloadMfData(false, true);
+                } else {
+                    $this->downloadMfData(false, false, true);
+                }
+
+                $this->extractMfData();
+            }
+        } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
+            $this->addResponse($e->getMessage(), 1);
+
+            return false;
+        }
+
+        try {
+            return (new Sqlite())->init(base_path($this->destDir . $this->today . '-' . $type . '.db'));
+        } catch (\throwable $e) {
+            $this->addResponse('Unable to open database file', 1);
+
+            return false;
         }
     }
 
@@ -1067,8 +1137,6 @@ class MfExtractdata extends BasePackage
 
     protected function processGold($data)
     {
-        $today = $this->now->toDateString();
-
         try {
             if ($this->localContent->fileExists($this->destDir . $this->today . '-gold' . '.json')) {
                 $this->addResponse('File for ' . $this->today . ' already exists and imported.', 1);
@@ -1229,8 +1297,6 @@ class MfExtractdata extends BasePackage
 
     protected function getKuveraMapping()
     {
-        $today = $this->now->toDateString();
-
         $this->sourceLink = 'https://raw.githubusercontent.com/captn3m0/india-mutual-funds-info/refs/heads/main/data.csv';
 
         $this->destFile = base_path($this->destDir) . $this->today . '-kuvera.csv';
