@@ -310,13 +310,17 @@ class MfExtractdata extends BasePackage
                     $this->localContent->delete($this->destDir . $this->today . $file . '.db');
                 }
 
-                if (!$this->localContent->fileExists($this->destDir . $this->today . $file . '.db.zst')) {
-                    if (str_contains($file, '-latest')) {
-                        $this->downloadData(false, true);
-                    } else if (str_contains($file, '-funds')) {
-                        $this->downloadData(false, false, true);
-                    }
-                }
+                // if (!$this->localContent->fileExists($this->destDir . $this->today . $file . '.db.zst')) {
+                //     $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/' . $file . '.db.zst';
+
+                //     $this->destFile = base_path($this->destDir) . $this->today .  $file . '.db.zst';
+
+                //     if (str_contains($file, '-latest')) {
+                //         $this->downloadData(false, true);
+                //     } else if (str_contains($file, '-funds')) {
+                //         $this->downloadData(false, false, true);
+                //     }
+                // }
 
                 //Decompress
                 exec('unzstd -d -f ' . base_path($this->destDir) . $this->today . $file . '.db.zst -o ' . base_path($this->destDir) . $this->today . $file . '.db', $output, $result);
@@ -608,9 +612,9 @@ class MfExtractdata extends BasePackage
 
                                 if (isset($dbNav['navs'][$previousDay])) {
                                     $dbNav['navs'][$amfiNavs[0]['date']]['diff'] =
-                                        (float) number_format($amfiNavs[0]['nav'] - $dbNav['navs'][$previousDay]['nav'], 4, '.', '');
+                                        numberFormatPrecision($amfiNavs[0]['nav'] - $dbNav['navs'][$previousDay]['nav'], 4);
                                     $dbNav['navs'][$amfiNavs[0]['date']]['diff_percent'] =
-                                        (float) number_format(($amfiNavs[0]['nav'] * 100 / $dbNav['navs'][$previousDay]['nav']) - 100, 2, '.', '');
+                                        numberFormatPrecision(($amfiNavs[0]['nav'] * 100 / $dbNav['navs'][$previousDay]['nav']) - 100, 2);
 
                                     $dbNav['navs'][$amfiNavs[0]['date']]['trajectory'] = '-';
                                     if ($amfiNavs[0]['nav'] > $dbNav['navs'][$previousDay]['nav']) {
@@ -618,6 +622,11 @@ class MfExtractdata extends BasePackage
                                     } else {
                                         $dbNav['navs'][$amfiNavs[0]['date']]['trajectory'] = 'down';
                                     }
+
+                                    $dbNav['navs'][$amfiNavs[0]['date']]['diff_since_inception'] =
+                                        numberFormatPrecision($amfiNavs[0]['nav'] - $this->helper->first($dbNav['navs'])['nav'], 4);
+                                    $dbNav['navs'][$amfiNavs[0]['date']]['diff_percent_since_inception'] =
+                                        numberFormatPrecision(($amfiNavs[0]['nav'] * 100 / $this->helper->first($dbNav['navs'])['nav'] - 100), 2);
                                 }
                             }
 
@@ -703,6 +712,7 @@ class MfExtractdata extends BasePackage
                                 }
                             }
                         }
+
                         if ($amfiNavs && count($amfiNavs) > 0) {
                             if (!isset($data['get_all_navs']) &&
                                 $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
@@ -727,7 +737,6 @@ class MfExtractdata extends BasePackage
                             $newdata = false;
 
                             foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
-                                // trace([array_reverse($amfiNavs)]);
                                 if (!isset($dbNav['navs'][$amfiNav['date']])) {
                                     $newdata = true;
                                     $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
@@ -738,9 +747,9 @@ class MfExtractdata extends BasePackage
                                         $previousDay = $amfiNavs[$amfiNavKey - 1];
 
                                         $dbNav['navs'][$amfiNav['date']]['diff'] =
-                                            (float) number_format($amfiNav['nav'] - $previousDay['nav'], 4, '.', '');
+                                            numberFormatPrecision($amfiNav['nav'] - $previousDay['nav'], 4);
                                         $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
-                                            (float) number_format(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2, '.', '');
+                                            numberFormatPrecision(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2);
 
                                         $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
                                         if ($amfiNav['nav'] > $previousDay['nav']) {
@@ -754,10 +763,17 @@ class MfExtractdata extends BasePackage
                                             $dbNav['diff_percent'] = $dbNav['navs'][$amfiNav['date']]['diff_percent'];
                                             $dbNav['trajectory'] = $dbNav['navs'][$amfiNav['date']]['trajectory'];
                                         }
+
+                                        if ($amfiNavKey !== 0) {
+                                            $dbNav['navs'][$amfiNav['date']]['diff_since_inception'] =
+                                                numberFormatPrecision($amfiNav['nav'] - $amfiNavs[0]['nav'], 4);
+                                            $dbNav['navs'][$amfiNav['date']]['diff_percent_since_inception'] =
+                                                numberFormatPrecision(($amfiNav['nav'] * 100 / $amfiNavs[0]['nav'] - 100), 2);
+                                        }
                                     }
                                 }
                             }
-                            // die();
+
                             if (!$newdata) {
                                 $this->processUpdateTimer($dbCount, $i);
 
@@ -796,8 +812,10 @@ class MfExtractdata extends BasePackage
         if ($totalNavs > 1) {
             if ($totalNavs > 7) {
                 $forWeek = $totalNavs - 7;
+                $forWeekStartNav = $dbNavNavs[$forWeek]['nav'];
             } else {
                 $forWeek = $totalNavs;
+                $forWeekStartNav = $dbNavNavs[0]['nav'];
             }
 
             $dbNav['navs_chunks']['week'] = [];
@@ -805,14 +823,20 @@ class MfExtractdata extends BasePackage
                 $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']] = [];
                 $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['date'] = $dbNavNavs[$forWeek]['date'];
                 $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['nav'] = $dbNavNavs[$forWeek]['nav'];
+                $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['diff'] =
+                    numberFormatPrecision($dbNavNavs[$forWeek]['nav'] - $forWeekStartNav, 4);
+                $dbNav['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['diff_percent'] =
+                    numberFormatPrecision(($dbNavNavs[$forWeek]['nav'] * 100 / $forWeekStartNav - 100), 2);
             }
         }
 
         if ($totalNavs > 7) {
             if ($totalNavs > 30) {
                 $forMonth = $totalNavs - 30;
+                $forMonthStartNav = $dbNavNavs[$forMonth]['nav'];
             } else {
                 $forMonth = $totalNavs;
+                $forMonthStartNav = $dbNavNavs[0]['nav'];
             }
 
             $dbNav['navs_chunks']['month'] = [];
@@ -820,14 +844,20 @@ class MfExtractdata extends BasePackage
                 $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']] = [];
                 $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['date'] = $dbNavNavs[$forMonth]['date'];
                 $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['nav'] = $dbNavNavs[$forMonth]['nav'];
+                $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['diff'] =
+                    numberFormatPrecision($dbNavNavs[$forMonth]['nav'] - $forMonthStartNav, 4);
+                $dbNav['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['diff_percent'] =
+                    numberFormatPrecision(($dbNavNavs[$forMonth]['nav'] * 100 / $forMonthStartNav - 100), 2);
             }
         }
 
         if ($totalNavs > 30) {
             if ($totalNavs > 365) {
                 $forYear = $totalNavs - 365;
+                $forYearStartNav = $dbNavNavs[$forYear]['nav'];
             } else {
                 $forYear = $totalNavs;
+                $forYearStartNav = $dbNavNavs[0]['nav'];
             }
 
             $dbNav['navs_chunks']['year'] = [];
@@ -835,14 +865,20 @@ class MfExtractdata extends BasePackage
                 $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']] = [];
                 $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['date'] = $dbNavNavs[$forYear]['date'];
                 $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['nav'] = $dbNavNavs[$forYear]['nav'];
+                $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['diff'] =
+                    numberFormatPrecision($dbNavNavs[$forYear]['nav'] - $forYearStartNav, 4);
+                $dbNav['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['diff_percent'] =
+                    numberFormatPrecision(($dbNavNavs[$forYear]['nav'] * 100 / $forYearStartNav - 100), 2);
             }
         }
 
         if ($totalNavs > 365) {
             if ($totalNavs > 1095) {
                 $forThreeYear = $totalNavs - 1095;
+                $forThreeYearStartNav = $dbNavNavs[$forThreeYear]['nav'];
             } else {
                 $forThreeYear = $totalNavs;
+                $forThreeYearStartNav = $dbNavNavs[0]['nav'];
             }
 
             $dbNav['navs_chunks']['threeYear'] = [];
@@ -850,14 +886,20 @@ class MfExtractdata extends BasePackage
                 $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']] = [];
                 $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['date'] = $dbNavNavs[$forThreeYear]['date'];
                 $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['nav'] = $dbNavNavs[$forThreeYear]['nav'];
+                $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['diff'] =
+                    numberFormatPrecision($dbNavNavs[$forThreeYear]['nav'] - $forThreeYearStartNav, 4);
+                $dbNav['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['diff_percent'] =
+                    numberFormatPrecision(($dbNavNavs[$forThreeYear]['nav'] * 100 / $forThreeYearStartNav - 100), 2);
             }
         }
 
         if ($totalNavs > 1095) {
             if ($totalNavs > 1825) {
                 $forFiveYear = $totalNavs - 1825;
+                $forFiveYearStartNav = $dbNavNavs[$forFiveYear]['nav'];
             } else {
                 $forFiveYear = $totalNavs;
+                $forFiveYearStartNav = $dbNavNavs[0]['nav'];
             }
 
             $dbNav['navs_chunks']['fiveYear'] = [];
@@ -865,14 +907,44 @@ class MfExtractdata extends BasePackage
                 $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']] = [];
                 $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['date'] = $dbNavNavs[$forFiveYear]['date'];
                 $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['nav'] = $dbNavNavs[$forFiveYear]['nav'];
+                $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['diff'] =
+                    numberFormatPrecision($dbNavNavs[$forFiveYear]['nav'] - $forFiveYearStartNav, 4);
+                $dbNav['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['diff_percent'] =
+                    numberFormatPrecision(($dbNavNavs[$forFiveYear]['nav'] * 100 / $forFiveYearStartNav - 100), 2);
+            }
+        }
+
+        if ($totalNavs > 3652) {
+            if ($totalNavs > 3652) {
+                $forTenYear = $totalNavs - 3652;
+                $forTenYearStartNav = $dbNavNavs[$forTenYear]['nav'];
+            } else {
+                $forTenYear = $totalNavs;
+                $forTenYearStartNav = $dbNavNavs[0]['nav'];
+            }
+
+            $dbNav['navs_chunks']['tenYear'] = [];
+            for ($forTenYear; $forTenYear < $totalNavs; $forTenYear++) {
+                $dbNav['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']] = [];
+                $dbNav['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['date'] = $dbNavNavs[$forTenYear]['date'];
+                $dbNav['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['nav'] = $dbNavNavs[$forTenYear]['nav'];
+                $dbNav['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['diff'] =
+                    numberFormatPrecision($dbNavNavs[$forTenYear]['nav'] - $forTenYearStartNav, 4);
+                $dbNav['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['diff_percent'] =
+                    numberFormatPrecision(($dbNavNavs[$forTenYear]['nav'] * 100 / $forTenYearStartNav - 100), 2);
             }
         }
 
         $dbNav['navs_chunks']['all'] = [];
+        $forAllStartNav = $dbNavNavs[0]['nav'];
         for ($forAll = 0; $forAll < $totalNavs; $forAll++) {
             $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']] = [];
             $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['date'] = $dbNavNavs[$forAll]['date'];
             $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['nav'] = $dbNavNavs[$forAll]['nav'];
+            $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['diff'] =
+                numberFormatPrecision($dbNavNavs[$forAll]['nav'] - $forAllStartNav, 4);
+            $dbNav['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['diff_percent'] =
+                numberFormatPrecision(($dbNavNavs[$forAll]['nav'] * 100 / $forAllStartNav - 100), 2);
         }
     }
 
