@@ -105,42 +105,47 @@ class MfExtractdata extends BasePackage
         }
     }
 
-    protected function downloadMfData($downloadSchemes = true, $downloadLatestNav = false, $downloadAllNav = false)
+    protected function downloadMfSchemesData()
     {
-        $this->method = 'downloadMfData';
+        $this->method = 'downloadMfSchemesData';
 
-        if ($downloadSchemes) {
-            $this->sourceLink = 'https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0';
+        $this->sourceLink = 'https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0';
 
-            $this->destFile = base_path($this->destDir) . $this->today . '-schemes.csv';
+        $this->destFile = base_path($this->destDir) . $this->today . '-schemes.csv';
 
-            try {
-                //File is already downloaded
-                if ($this->localContent->fileExists($this->destDir . $this->today . '-schemes.csv')) {
-                    $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+        try {
+            //File is already downloaded
+            if ($this->localContent->fileExists($this->destDir . $this->today . '-schemes.csv')) {
+                $remoteSize = (int) getRemoteFilesize($this->sourceLink);
 
-                    $localSize = $this->localContent->fileSize($this->destDir . $this->today . '-schemes.csv');
+                $localSize = $this->localContent->fileSize($this->destDir . $this->today . '-schemes.csv');
 
-                    if ($remoteSize === $localSize) {
-                        return true;
-                    }
+                if ($remoteSize === $localSize) {
+                    return true;
                 }
-            } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | \throwable $e) {
-                $this->addResponse($e->getMessage(), 1);
-
-                return false;
             }
+        } catch (FilesystemException | UnableToCheckExistence | UnableToRetrieveMetadata | \throwable $e) {
+            $this->addResponse($e->getMessage(), 1);
 
-            //Perform Old files cleanup
-            if (!$this->cleanup('schemes')) {
-                return false;
-            }
+            return false;
         }
+
+        //Perform Old files cleanup
+        if (!$this->cleanup('schemes')) {
+            return false;
+        }
+
+        return $this->downloadData($this->sourceLink, $this->destFile);
+    }
+
+    protected function downloadMfNavsData($downloadLatestNav = false, $downloadAllNav = false)
+    {
+        $this->method = 'downloadMfNavsData';
 
         if ($downloadLatestNav) {
             try {
                 if (!$this->localContent->fileExists($this->destDir . $this->previousDay . '-latest.db.zst')) {
-                    $this->downloadMfData(false, false, true);
+                    $this->downloadMfNavsData(false, true);
                 }
 
                 $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/latest.db.zst';
@@ -284,11 +289,25 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function extractMfData()
+    protected function extractMfNavsData()
     {
-        $this->method = 'extractMfData';
+        $this->method = 'extractMfNavsData';
 
-        $files = ['-latest', '-funds'];
+        $files = [];
+
+        if ($this->localContent->fileExists($this->destDir . $this->today . '-latest.db.zst')) {
+            array_push($files, '-latest');
+        }
+
+        if ($this->localContent->fileExists($this->destDir . $this->today . '-funds.db.zst')) {
+            array_push($files, '-funds');
+        }
+
+        if (count($files) === 0) {
+            $this->addResponse('Nothing to extract!', 1);
+
+            return false;
+        }
 
         foreach ($files as $file) {
             try {
@@ -310,18 +329,6 @@ class MfExtractdata extends BasePackage
                     $this->localContent->delete($this->destDir . $this->today . $file . '.db');
                 }
 
-                // if (!$this->localContent->fileExists($this->destDir . $this->today . $file . '.db.zst')) {
-                //     $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/' . $file . '.db.zst';
-
-                //     $this->destFile = base_path($this->destDir) . $this->today .  $file . '.db.zst';
-
-                //     if (str_contains($file, '-latest')) {
-                //         $this->downloadData(false, true);
-                //     } else if (str_contains($file, '-funds')) {
-                //         $this->downloadData(false, false, true);
-                //     }
-                // }
-
                 //Decompress
                 exec('unzstd -d -f ' . base_path($this->destDir) . $this->today . $file . '.db.zst -o ' . base_path($this->destDir) . $this->today . $file . '.db', $output, $result);
                 if (PHP_SAPI !== 'cli') {
@@ -342,12 +349,12 @@ class MfExtractdata extends BasePackage
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
                         counters: ['stepsTotal' => 5, 'stepsCurrent' => 2],
-                        text: 'Generating Index...'
+                        text: 'Generating Main Index...'
                     );
                 }
 
                 if ($result !== 0) {
-                    return $this->extractionFail($output);
+                    return $this->indexingFail($output);
                 }
 
                 exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
@@ -355,12 +362,12 @@ class MfExtractdata extends BasePackage
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
                         counters: ['stepsTotal' => 5, 'stepsCurrent' => 3],
-                        text: 'Generating Index...'
+                        text: 'Generating Scheme Index...'
                     );
                 }
 
                 if ($result !== 0) {
-                    return $this->extractionFail($output);
+                    return $this->indexingFail($output);
                 }
 
                 exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
@@ -368,12 +375,12 @@ class MfExtractdata extends BasePackage
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
                         counters: ['stepsTotal' => 5, 'stepsCurrent' => 4],
-                        text: 'Generating Index...'
+                        text: 'Generating Securities Scheme Index...'
                     );
                 }
 
                 if ($result !== 0) {
-                    return $this->extractionFail($output);
+                    return $this->indexingFail($output);
                 }
 
                 exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
@@ -381,12 +388,12 @@ class MfExtractdata extends BasePackage
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
                         counters: ['stepsTotal' => 5, 'stepsCurrent' => 5],
-                        text: 'Generating Index...'
+                        text: 'Generating Securities Isin Index...'
                     );
                 }
 
                 if ($result !== 0) {
-                    return $this->extractionFail($output);
+                    return $this->indexingFail($output);
                 }
             } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
                 $this->addResponse($e->getMessage(), 1);
@@ -405,144 +412,156 @@ class MfExtractdata extends BasePackage
         return false;
     }
 
-    protected function processMfData($processSchemes = true, $processLatestNav = false, $processAllNav = false, $data = [])
+    protected function indexingFail($output)
     {
-        $this->method = 'processMfData';
+        $this->addResponse('Error indexing file', 1, ['output' => $output]);
 
-        if ($processSchemes) {
-            try {
-                $this->schemesPackage = new MfSchemes;
+        return false;
+    }
 
-                $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $this->today . '-schemes.csv'));
-                $csv->setHeaderOffset(0);
+    protected function processMfSchemesData()
+    {
+        $this->method = 'processMfSchemesData';
 
-                $statement = (new Statement())->orderByAsc('AMC');
-                $records = $statement->process($csv);
+        try {
+            $this->schemesPackage = new MfSchemes;
 
-                $isinsTotal = count($records);
-                $lineNo = 1;
+            $csv = Reader::createFromStream($this->localContent->readStream($this->destDir . $this->today . '-schemes.csv'));
+            $csv->setHeaderOffset(0);
 
-                foreach ($records as $line) {
-                    //Timer
-                    $this->basepackages->utils->setMicroTimer('Start');
+            $statement = (new Statement())->orderByAsc('AMC');
+            $records = $statement->process($csv);
 
-                    $isinArr = explode('INF', $line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment']);
+            $isinsTotal = count($records);
+            $lineNo = 1;
 
-                    if (count($isinArr) === 0) {
-                        $isinArr[0] = '';
-                        $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
-                    }
+            foreach ($records as $line) {
+                //Timer
+                $this->basepackages->utils->setMicroTimer('Start');
 
-                    if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
-                        $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
-                    }
+                $isinArr = explode('INF', $line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment']);
 
-                    $scheme = $this->schemesPackage->getMfTypeByAmfiCode($line['Code']);
+                if (count($isinArr) === 0) {
+                    $isinArr[0] = '';
+                    $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
+                }
 
-                    if ($scheme) {
-                        if ($scheme['amfi_code'] == $line['Code']) {
-                            $this->processUpdateTimer($isinsTotal, $lineNo);
+                if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
+                    $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
+                }
 
-                            $lineNo++;
+                $scheme = $this->schemesPackage->getMfTypeByAmfiCode($line['Code']);
 
-                            continue;
-                        } else {
-                            //We found a duplicate entry in the CSV file with different amfi_code
-                            if (count($isinArr) === 2) {
-                                $isinArr[1] = 'INF' . trim($isinArr[1]) . '_duplicate';
-                            } else if (count($isinArr) === 3) {
-                                $isinArr[1] = 'INF' . trim($isinArr[1]) . '_duplicate';
-                                $isinArr[2] = 'INF' . trim($isinArr[2]) . '_duplicate';
-                            }
+                if ($scheme) {
+                    if ($scheme['amfi_code'] == $line['Code']) {
+                        $this->processUpdateTimer($isinsTotal, $lineNo);
+
+                        $lineNo++;
+
+                        continue;
+                    } else {
+                        //We found a duplicate entry in the CSV file with different amfi_code
+                        if (count($isinArr) === 2) {
+                            $isinArr[1] = 'INF' . trim($isinArr[1]) . '_duplicate';
+                        } else if (count($isinArr) === 3) {
+                            $isinArr[1] = 'INF' . trim($isinArr[1]) . '_duplicate';
+                            $isinArr[2] = 'INF' . trim($isinArr[2]) . '_duplicate';
                         }
                     }
-
-                    $scheme = [];
-
-                    $amc = $this->processAmcs($line);
-                    if (!$amc) {
-                        $this->basepackages->progress->setErrors([
-                            'error' => 'Cannot create new AMC information for line# ' . $lineNo,
-                            'line' => $this->helper->encode($line)
-                        ]);
-
-                        $this->addResponse('Cannot create new AMC information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
-
-                        return false;
-                    }
-
-                    $category = $this->processCategories($line);
-                    if (!$category) {
-                        $this->basepackages->progress->setErrors([
-                            'error' => 'Cannot create new category information for line# ' . $lineNo,
-                            'line' => $this->helper->encode($line)
-                        ]);
-
-                        $this->addResponse('Cannot create new category information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
-
-                        return false;
-                    }
-
-                    if (count($isinArr) === 2) {
-                        $scheme['isin'] = 'INF' . trim($isinArr[1]);
-                    } else if (count($isinArr) === 3) {
-                        $scheme['isin'] = 'INF' . trim($isinArr[1]);
-                        $scheme['isin_reinvest'] = 'INF' . trim($isinArr[2]);
-                    }
-
-                    $scheme['amc_id'] = $amc['id'];
-                    $scheme['amfi_code'] = $line['Code'];
-                    $scheme['scheme_type'] = $line['Scheme Type'];
-                    $scheme['category_id'] = $category['id'];
-                    $scheme['name'] = $line['Scheme NAV Name'];
-                    if (str_contains(strtolower($line['Scheme NAV Name']), 'direct')) {
-                        $scheme['expense_ratio_type'] = 'Direct';
-                    } else if (str_contains(strtolower($line['Scheme NAV Name']), 'regular')) {
-                        $scheme['expense_ratio_type'] = 'Regular';
-                    } else {
-                        $scheme['expense_ratio_type'] = 'Direct';
-                    }
-                    if (str_contains(strtolower($line['Scheme NAV Name']), 'growth')) {
-                        $scheme['plan_type'] = 'Growth';
-                    } else if (str_contains(strtolower($line['Scheme NAV Name']), 'idcw') ||
-                               str_contains(strtolower($line['Scheme NAV Name']), 'dividend') ||
-                               str_contains(strtolower($line['Scheme NAV Name']), 'income distribution')
-                    ) {
-                        $scheme['plan_type'] = 'IDCW';
-                    } else {
-                        $scheme['plan_type'] = 'Growth';
-                    }
-                    if (str_contains(strtolower($line['Scheme NAV Name']), 'passive')) {
-                        $scheme['management_type'] = 'Passive';
-                    } else {
-                        $scheme['management_type'] = 'Active';
-                    }
-
-                    if (isset($scheme['id'])) {
-                        $this->schemesPackage->update($scheme);
-                    } else {
-                        $this->schemesPackage->add($scheme);
-                    }
-
-                    //Timer
-                    $this->processUpdateTimer($isinsTotal, $lineNo);
-
-                    $lineNo++;
                 }
-            } catch (\throwable $e) {
-                $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
 
-                $errors['exception'] = $e->getMessage();
-                $errors['lineNo'] = $lineNo;
-                $errors['line'] = $this->helper->encode($line);
+                $scheme = [];
 
-                $this->basepackages->progress->setErrors($errors);
+                $amc = $this->processAmcs($line);
+                if (!$amc) {
+                    $this->basepackages->progress->setErrors([
+                        'error' => 'Cannot create new AMC information for line# ' . $lineNo,
+                        'line' => $this->helper->encode($line)
+                    ]);
 
-                $this->basepackages->progress->resetProgress();
+                    $this->addResponse('Cannot create new AMC information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
 
-                throw $e;
+                    return false;
+                }
+
+                $category = $this->processCategories($line);
+                if (!$category) {
+                    $this->basepackages->progress->setErrors([
+                        'error' => 'Cannot create new category information for line# ' . $lineNo,
+                        'line' => $this->helper->encode($line)
+                    ]);
+
+                    $this->addResponse('Cannot create new category information for line# ' . $lineNo, 1, ['line' => $this->helper->encode($line)]);
+
+                    return false;
+                }
+
+                if (count($isinArr) === 2) {
+                    $scheme['isin'] = 'INF' . trim($isinArr[1]);
+                } else if (count($isinArr) === 3) {
+                    $scheme['isin'] = 'INF' . trim($isinArr[1]);
+                    $scheme['isin_reinvest'] = 'INF' . trim($isinArr[2]);
+                }
+
+                $scheme['amc_id'] = $amc['id'];
+                $scheme['amfi_code'] = $line['Code'];
+                $scheme['scheme_type'] = $line['Scheme Type'];
+                $scheme['category_id'] = $category['id'];
+                $scheme['name'] = $line['Scheme NAV Name'];
+                if (str_contains(strtolower($line['Scheme NAV Name']), 'direct')) {
+                    $scheme['expense_ratio_type'] = 'Direct';
+                } else if (str_contains(strtolower($line['Scheme NAV Name']), 'regular')) {
+                    $scheme['expense_ratio_type'] = 'Regular';
+                } else {
+                    $scheme['expense_ratio_type'] = 'Direct';
+                }
+                if (str_contains(strtolower($line['Scheme NAV Name']), 'growth')) {
+                    $scheme['plan_type'] = 'Growth';
+                } else if (str_contains(strtolower($line['Scheme NAV Name']), 'idcw') ||
+                           str_contains(strtolower($line['Scheme NAV Name']), 'dividend') ||
+                           str_contains(strtolower($line['Scheme NAV Name']), 'income distribution')
+                ) {
+                    $scheme['plan_type'] = 'IDCW';
+                } else {
+                    $scheme['plan_type'] = 'Growth';
+                }
+                if (str_contains(strtolower($line['Scheme NAV Name']), 'passive')) {
+                    $scheme['management_type'] = 'Passive';
+                } else {
+                    $scheme['management_type'] = 'Active';
+                }
+
+                if (isset($scheme['id'])) {
+                    $this->schemesPackage->update($scheme);
+                } else {
+                    $this->schemesPackage->add($scheme);
+                }
+
+                //Timer
+                $this->processUpdateTimer($isinsTotal, $lineNo);
+
+                $lineNo++;
             }
+        } catch (\throwable $e) {
+            $this->addResponse($e->getMessage(), 1, ['line' => $this->helper->encode($line)]);
+
+            $errors['exception'] = $e->getMessage();
+            $errors['lineNo'] = $lineNo;
+            $errors['line'] = $this->helper->encode($line);
+
+            $this->basepackages->progress->setErrors($errors);
+
+            $this->basepackages->progress->resetProgress();
+
+            throw $e;
         }
+
+        return true;
+    }
+
+    protected function processMfNavsData($processLatestNav = false, $processAllNav = false, $data = [])
+    {
+        $this->method = 'processMfNavsData';
 
         if ($processLatestNav && count($data) === 0) {
             if (!$sqlite = $this->initDb('latest', $data)) {
@@ -1022,9 +1041,9 @@ class MfExtractdata extends BasePackage
                 }
 
                 if ($type === 'latest') {
-                    $this->downloadMfData(false, true);
+                    $this->downloadMfNavsData(true);
                 } else {
-                    $this->downloadMfData(false, false, true);
+                    $this->downloadMfNavsData(false, true);
                 }
 
                 $this->extractMfData();
