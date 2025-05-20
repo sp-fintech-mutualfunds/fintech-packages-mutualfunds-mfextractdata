@@ -54,6 +54,8 @@ class MfExtractdata extends BasePackage
 
     protected $mfFileSizeMatch = [];
 
+    protected $processAll = false;
+
     public function onConstruct()
     {
         if (!is_dir(base_path($this->destDir))) {
@@ -146,6 +148,8 @@ class MfExtractdata extends BasePackage
             try {
                 if (!$this->localContent->fileExists($this->destDir . $this->previousDay . '-latest.db.zst')) {
                     $this->downloadMfNavsData(false, true);
+
+                    $this->processAll = true;
                 }
 
                 $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/latest.db.zst';
@@ -563,6 +567,11 @@ class MfExtractdata extends BasePackage
     {
         $this->method = 'processMfNavsData';
 
+        if ($this->processAll) {
+            $processLatestNav = false;
+            $processAllNav = true;
+        }
+
         if ($processLatestNav && count($data) === 0) {
             if (!$sqlite = $this->initDb('latest', $data)) {
                 return false;
@@ -681,6 +690,10 @@ class MfExtractdata extends BasePackage
                 $lastUpdated = '2000-01-01';
             }
 
+            if ($this->now->dayOfWeek === 0) {
+                $lastUpdated = $this->now->subYear()->toDateString();
+            }
+
             if (isset($data['scheme_id'])) {
                 $dbCount = 1;
             } else {
@@ -734,6 +747,7 @@ class MfExtractdata extends BasePackage
 
                         if ($amfiNavs && count($amfiNavs) > 0) {
                             if (!isset($data['get_all_navs']) &&
+                                isset($dbNav['last_updated']) &&
                                 $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
                             ) {
                                 $this->processUpdateTimer($dbCount, $i);
@@ -1071,6 +1085,8 @@ class MfExtractdata extends BasePackage
 
         if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
             $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $lineNo)));
+        } else {
+            $totalTime = date("H:i:s", 0);
         }
 
         $this->basepackages->utils->resetMicroTimer();
@@ -1217,6 +1233,7 @@ class MfExtractdata extends BasePackage
 
                     $childCategory = $this->categoriesPackage->packagesData->last;
                 }
+
                 return $childCategory;
             }
 
@@ -1353,11 +1370,12 @@ class MfExtractdata extends BasePackage
             }
         } else {
             $apisArr = $this->basepackages->apiClientServices->getApiByAppType();
+            $apisArr = array_merge($apisArr, $this->basepackages->apiClientServices->getApiByAppType('core'));
         }
 
         if (count($apisArr) > 0) {
-            foreach ($apisArr as $api) {
-                if ($api['category'] === 'repos') {
+            foreach ($apisArr as $apisArrKey => $api) {
+                if ($api['category'] === 'repos' || $api['category'] === 'providers') {
                     $useApi = $this->basepackages->apiClientServices->useApi([
                             'config' =>
                                 [
@@ -1371,9 +1389,19 @@ class MfExtractdata extends BasePackage
                     if ($useApi) {
                         $apiConfig = $useApi->getApiConfig();
 
+                        if (isset($apiConfig['repo_url']) && !str_contains($apiConfig['repo_url'], 'sp-fintech-mutualfunds')) {
+                            unset($apisArr[$apisArrKey]);
+
+                            continue;
+                        }
+
                         $apis[$api['id']]['id'] = $apiConfig['id'];
                         $apis[$api['id']]['name'] = $apiConfig['name'];
-                        $apis[$api['id']]['data']['url'] = $apiConfig['repo_url'];
+                        if (isset($apiConfig['repo_url'])) {
+                            $apis[$api['id']]['data']['url'] = $apiConfig['repo_url'];
+                        } else if (isset($apiConfig['api_url'])) {
+                            $apis[$api['id']]['data']['url'] = $apiConfig['api_url'];
+                        }
                     }
                 }
             }
