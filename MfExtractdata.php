@@ -681,8 +681,8 @@ class MfExtractdata extends BasePackage
                 return false;
             }
 
-            $this->navsPackage = new MfNavs;
-            $this->schemesPackage = new MfSchemes;
+            $this->navsPackage = $this->usePackage(MfNavs::class);
+            $this->schemesPackage = $this->usePackage(MfSchemes::class);
 
             $lastUpdated = $this->weekAgo;
 
@@ -697,7 +697,7 @@ class MfExtractdata extends BasePackage
             if (isset($data['scheme_id'])) {
                 $dbCount = 1;
             } else {
-                $dbCount = $this->schemesPackage->getDbCount(true);
+                $dbCount = $this->schemesPackage->getLastInsertedId();
             }
 
             if ($dbCount > 0) {
