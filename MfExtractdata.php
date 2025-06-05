@@ -467,12 +467,16 @@ class MfExtractdata extends BasePackage
 
                 $isinArr = explode('INF', $line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment']);
 
-                if (count($isinArr) === 0) {
+                if (strlen($line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment']) === 0) {
                     $isinArr[0] = '';
                     $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
                 }
 
-                if (count($isinArr) === 1 && ($isinArr[0] === '' || $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx')) {
+                if (count($isinArr) === 1 &&
+                    ($isinArr[0] === '' ||
+                     $isinArr[0] === 'xxxxxxxxxxxxxxxxxxx' ||
+                     $isinArr[0] === $line['ISIN Div Payout/ ISIN GrowthISIN Div Reinvestment'])
+                ) {
                     $isinArr[1] = 'INF_' . hash('md5', $line['Code']);
                 }
 
