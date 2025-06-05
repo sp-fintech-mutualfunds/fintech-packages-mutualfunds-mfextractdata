@@ -111,16 +111,16 @@ class MfExtractdata extends BasePackage
     {
         $this->method = 'downloadMfSchemesData';
 
-        $this->sourceLink = 'https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0';
+        $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/schemes.csv.zst';
 
-        $this->destFile = base_path($this->destDir) . $this->today . '-schemes.csv';
+        $this->destFile = base_path($this->destDir) . $this->today . '-schemes.csv.zst';
 
         try {
             //File is already downloaded
-            if ($this->localContent->fileExists($this->destDir . $this->today . '-schemes.csv')) {
+            if ($this->localContent->fileExists($this->destDir . $this->today . '-schemes.csv.zst')) {
                 $remoteSize = (int) getRemoteFilesize($this->sourceLink);
 
-                $localSize = $this->localContent->fileSize($this->destDir . $this->today . '-schemes.csv');
+                $localSize = $this->localContent->fileSize($this->destDir . $this->today . '-schemes.csv.zst');
 
                 if ($remoteSize === $localSize) {
                     return true;
@@ -291,6 +291,24 @@ class MfExtractdata extends BasePackage
         }
 
         return true;
+    }
+
+    protected function extractMfSchemesData($extractLatestNav = false, $extractAllNav = true)
+    {
+        try {
+            //Decompress
+            exec('unzstd -d -f ' . base_path($this->destDir) . $this->today . '-schemes.csv.zst -o ' . base_path($this->destDir) . $this->today . '-schemes.csv', $output, $result);
+
+            if ($result !== 0) {
+                return $this->extractionFail($output);
+            }
+
+            return true;
+        } catch (\throwable $e) {
+            $this->addResponse($e->getMessage(), 1);
+
+            return false;
+        }
     }
 
     protected function extractMfNavsData($extractLatestNav = false, $extractAllNav = true)
