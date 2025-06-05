@@ -690,7 +690,8 @@ class MfExtractdata extends BasePackage
                 $lastUpdated = '2000-01-01';
             }
 
-            if ($this->now->dayOfWeek === 0) {
+            //Subtract year on every Sunday
+            if (!isset($data['get_all_navs']) && $this->now->dayOfWeek === 0) {
                 $lastUpdated = $this->now->subYear()->toDateString();
             }
 
