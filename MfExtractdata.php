@@ -140,7 +140,7 @@ class MfExtractdata extends BasePackage
         return $this->downloadData($this->sourceLink, $this->destFile);
     }
 
-    protected function downloadMfNavsData($downloadLatestNav = false, $downloadAllNav = false)
+    protected function downloadMfNavsData($downloadLatestNav = false, $downloadAllNav = true)
     {
         $this->method = 'downloadMfNavsData';
 
@@ -293,18 +293,22 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function extractMfNavsData()
+    protected function extractMfNavsData($extractLatestNav = false, $extractAllNav = true)
     {
         $this->method = 'extractMfNavsData';
 
         $files = [];
 
-        if ($this->localContent->fileExists($this->destDir . $this->today . '-latest.db.zst')) {
-            array_push($files, '-latest');
+        if ($extractLatestNav) {
+            if ($this->localContent->fileExists($this->destDir . $this->today . '-latest.db.zst')) {
+                array_push($files, '-latest');
+            }
         }
 
-        if ($this->localContent->fileExists($this->destDir . $this->today . '-funds.db.zst')) {
-            array_push($files, '-funds');
+        if ($extractAllNav) {
+            if ($this->localContent->fileExists($this->destDir . $this->today . '-funds.db.zst')) {
+                array_push($files, '-funds');
+            }
         }
 
         if (count($files) === 0) {
@@ -563,7 +567,7 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function processMfNavsData($processLatestNav = false, $processAllNav = false, $data = [])
+    protected function processMfNavsData($processLatestNav = false, $processAllNav = true, $data = [])
     {
         $this->method = 'processMfNavsData';
 
@@ -690,7 +694,8 @@ class MfExtractdata extends BasePackage
                 $lastUpdated = '2000-01-01';
             }
 
-            if ($this->now->dayOfWeek === 0) {
+            //Subtract year on every Sunday
+            if (!isset($data['get_all_navs']) && $this->now->dayOfWeek === 0) {
                 $lastUpdated = $this->now->subYear()->toDateString();
             }
 
