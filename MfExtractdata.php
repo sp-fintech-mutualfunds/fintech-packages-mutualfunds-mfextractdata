@@ -634,7 +634,7 @@ class MfExtractdata extends BasePackage
                             continue;
                         }
 
-                        $amfiNavs = $this->fillAmfiNavDays($amfiNavs);
+                        $amfiNavs = $this->fillAmfiNavDays($amfiNavs, $amfiCode);
 
                         $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
 
@@ -707,156 +707,173 @@ class MfExtractdata extends BasePackage
                 return false;
             }
 
-            $this->navsPackage = $this->usePackage(MfNavs::class);
-            $this->schemesPackage = $this->usePackage(MfSchemes::class);
+            try {
+                $this->navsPackage = $this->usePackage(MfNavs::class);
+                $this->schemesPackage = $this->usePackage(MfSchemes::class);
 
-            $lastUpdated = $this->weekAgo;
+                $lastUpdated = $this->weekAgo;
 
-            if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
-                $lastUpdated = '2000-01-01';
-            }
+                if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+                    $lastUpdated = '2000-01-01';
+                }
 
-            //Subtract year on every Sunday
-            if (!isset($data['get_all_navs']) && $this->now->dayOfWeek === 0) {
-                $lastUpdated = $this->now->subYear()->toDateString();
-            }
+                //Subtract year on every Sunday
+                if (!isset($data['get_all_navs']) && $this->now->dayOfWeek === 0) {
+                    $lastUpdated = $this->now->subYear()->toDateString();
+                }
 
-            if (isset($data['scheme_id'])) {
-                $dbCount = 1;
-            } else {
-                $dbCount = $this->schemesPackage->getLastInsertedId();
-            }
+                if (isset($data['scheme_id'])) {
+                    $dbCount = 1;
+                } else {
+                    $dbCount = $this->schemesPackage->getLastInsertedId();
+                }
 
-            if ($dbCount > 0) {
-                for ($i = 1; $i <= $dbCount; $i++) {
-                    $this->basepackages->utils->setMicroTimer('Start');
+                if ($dbCount > 0) {
+                    for ($i = 1; $i <= $dbCount; $i++) {
+                        $this->basepackages->utils->setMicroTimer('Start');
 
-                    if (isset($data['scheme_id'])) {
-                        $scheme = $this->schemesPackage->getById((int) $data['scheme_id']);
-                    } else {
-                        $scheme = $this->schemesPackage->getById($i);
-                    }
-
-                    if ($scheme) {
-                        $amfiCode = $scheme['amfi_code'];
-
-                        $amfiNavs = $sqlite->query(
-                            "SELECT * from nav N
-                            JOIN securities S ON N.scheme_code = S.scheme_code
-                            WHERE S.scheme_code = '" . $amfiCode . "' AND S.type = '0'
-                            AND N.date >= '$lastUpdated'
-                            ORDER BY N.date ASC"
-                        )->fetchAll(Enum::FETCH_ASSOC);
-
-                        if (!$amfiNavs) {
-                            $this->processUpdateTimer($dbCount, $i);
-
-                            continue;
-                        }
-
-                        $amfiNavs = $this->fillAmfiNavDays($amfiNavs);
-
-                        $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
-
-                        if (!$dbNav) {
-                            $dbNav = [];
-                            $dbNav['amfi_code'] = $scheme['amfi_code'];
-                            $dbNav['navs'] = [];
+                        if (isset($data['scheme_id'])) {
+                            $scheme = $this->schemesPackage->getById((int) $data['scheme_id']);
                         } else {
-                            $lastUpdated = $dbNav['last_updated'];
-
-                            if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
-                                if (!isset($dbNav['navs'])) {
-                                    $dbNav['navs'] = [];
-                                }
-                            }
+                            $scheme = $this->schemesPackage->getById($i);
                         }
 
-                        if ($amfiNavs && count($amfiNavs) > 0) {
-                            if (!isset($data['get_all_navs']) &&
-                                isset($dbNav['last_updated']) &&
-                                $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
-                            ) {
+                        if ($scheme) {
+                            $amfiCode = $scheme['amfi_code'];
+
+                            $amfiNavs = $sqlite->query(
+                                "SELECT * from nav N
+                                JOIN securities S ON N.scheme_code = S.scheme_code
+                                WHERE S.scheme_code = '" . $amfiCode . "' AND S.type = '0'
+                                AND N.date >= '$lastUpdated'
+                                ORDER BY N.date ASC"
+                            )->fetchAll(Enum::FETCH_ASSOC);
+
+                            if (!$amfiNavs) {
                                 $this->processUpdateTimer($dbCount, $i);
 
                                 continue;
                             }
 
-                            if ($this->helper->last($amfiNavs)['date']) {
-                                $dbNav['last_updated'] = $this->helper->last($amfiNavs)['date'];
+                            $amfiNavs = $this->fillAmfiNavDays($amfiNavs, $amfiCode);
+
+                            $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
+
+                            if (!$dbNav) {
+                                $dbNav = [];
+                                $dbNav['amfi_code'] = $scheme['amfi_code'];
+                                $dbNav['navs'] = [];
                             } else {
-                                $dbNav['last_updated'] = $this->today;
-                            }
+                                $lastUpdated = $dbNav['last_updated'];
 
-                            if ($this->helper->last($amfiNavs)['nav']) {
-                                $dbNav['latest_nav'] = $this->helper->last($amfiNavs)['nav'];
-                            } else {
-                                $dbNav['latest_nav'] = 0;
-                            }
-
-                            $newdata = false;
-
-                            foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
-                                if (!isset($dbNav['navs'][$amfiNav['date']])) {
-                                    $newdata = true;
-                                    $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
-                                    $dbNav['navs'][$amfiNav['date']]['date'] = $amfiNav['date'];
-                                    $dbNav['navs'][$amfiNav['date']]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
-
-                                    if ($amfiNavKey !== 0) {
-                                        $previousDay = $amfiNavs[$amfiNavKey - 1];
-
-                                        $dbNav['navs'][$amfiNav['date']]['diff'] =
-                                            numberFormatPrecision($amfiNav['nav'] - $previousDay['nav'], 4);
-                                        $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
-                                            numberFormatPrecision(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2);
-
-                                        $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
-                                        if ($amfiNav['nav'] > $previousDay['nav']) {
-                                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'up';
-                                        } else {
-                                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'down';
-                                        }
-
-                                        if ($amfiNavKey === $this->helper->lastKey($amfiNavs)) {
-                                            $dbNav['diff'] = $dbNav['navs'][$amfiNav['date']]['diff'];
-                                            $dbNav['diff_percent'] = $dbNav['navs'][$amfiNav['date']]['diff_percent'];
-                                            $dbNav['trajectory'] = $dbNav['navs'][$amfiNav['date']]['trajectory'];
-                                        }
-
-                                        if ($amfiNavKey !== 0) {
-                                            $dbNav['navs'][$amfiNav['date']]['diff_since_inception'] =
-                                                numberFormatPrecision($amfiNav['nav'] - $amfiNavs[0]['nav'], 4);
-                                            $dbNav['navs'][$amfiNav['date']]['diff_percent_since_inception'] =
-                                                numberFormatPrecision(($amfiNav['nav'] * 100 / $amfiNavs[0]['nav'] - 100), 2);
-                                        }
+                                if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+                                    if (!isset($dbNav['navs'])) {
+                                        $dbNav['navs'] = [];
                                     }
                                 }
                             }
 
-                            if (!$newdata) {
-                                $this->processUpdateTimer($dbCount, $i);
+                            if ($amfiNavs && count($amfiNavs) > 0) {
+                                if (!isset($data['get_all_navs']) &&
+                                    isset($dbNav['last_updated']) &&
+                                    $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
+                                ) {
+                                    $this->processUpdateTimer($dbCount, $i);
 
-                                continue;
+                                    continue;
+                                }
+
+                                if ($this->helper->last($amfiNavs)['date']) {
+                                    $dbNav['last_updated'] = $this->helper->last($amfiNavs)['date'];
+                                } else {
+                                    $dbNav['last_updated'] = $this->today;
+                                }
+
+                                if ($this->helper->last($amfiNavs)['nav']) {
+                                    $dbNav['latest_nav'] = $this->helper->last($amfiNavs)['nav'];
+                                } else {
+                                    $dbNav['latest_nav'] = 0;
+                                }
+
+                                $newdata = false;
+
+                                foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
+                                    if (!isset($dbNav['navs'][$amfiNav['date']])) {
+                                        $newdata = true;
+                                        $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
+                                        $dbNav['navs'][$amfiNav['date']]['date'] = $amfiNav['date'];
+                                        $dbNav['navs'][$amfiNav['date']]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
+
+                                        if ($amfiNavKey !== 0) {
+                                            $previousDay = $amfiNavs[$amfiNavKey - 1];
+
+                                            $dbNav['navs'][$amfiNav['date']]['diff'] =
+                                                numberFormatPrecision($amfiNav['nav'] - $previousDay['nav'], 4);
+                                            $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
+                                                numberFormatPrecision(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2);
+
+                                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
+                                            if ($amfiNav['nav'] > $previousDay['nav']) {
+                                                $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'up';
+                                            } else {
+                                                $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'down';
+                                            }
+
+                                            if ($amfiNavKey === $this->helper->lastKey($amfiNavs)) {
+                                                $dbNav['diff'] = $dbNav['navs'][$amfiNav['date']]['diff'];
+                                                $dbNav['diff_percent'] = $dbNav['navs'][$amfiNav['date']]['diff_percent'];
+                                                $dbNav['trajectory'] = $dbNav['navs'][$amfiNav['date']]['trajectory'];
+                                            }
+
+                                            if ($amfiNavKey !== 0) {
+                                                $dbNav['navs'][$amfiNav['date']]['diff_since_inception'] =
+                                                    numberFormatPrecision($amfiNav['nav'] - $amfiNavs[0]['nav'], 4);
+                                                $dbNav['navs'][$amfiNav['date']]['diff_percent_since_inception'] =
+                                                    numberFormatPrecision(($amfiNav['nav'] * 100 / $amfiNavs[0]['nav'] - 100), 2);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!$newdata) {
+                                    $this->processUpdateTimer($dbCount, $i);
+
+                                    continue;
+                                }
+
+                                $this->createChunks($dbNav);
+                            } else {
+                                $dbNav['last_updated'] = $this->today;
+                                $dbNav['latest_nav'] = 0;
                             }
 
-                            $this->createChunks($dbNav);
-                        } else {
-                            $dbNav['last_updated'] = $this->today;
-                            $dbNav['latest_nav'] = 0;
+                            if (isset($dbNav['id'])) {
+                                $dbNav['navs'] = msort(array: $dbNav['navs'], key: 'timestamp', preserveKey: true);
+
+                                $this->navsPackage->update($dbNav);
+                            } else {
+                                $this->navsPackage->add($dbNav);
+                            }
+
+                            $this->processUpdateTimer($dbCount, $i);
                         }
-
-                        if (isset($dbNav['id'])) {
-                            $dbNav['navs'] = msort(array: $dbNav['navs'], key: 'timestamp', preserveKey: true);
-
-                            $this->navsPackage->update($dbNav);
-                        } else {
-                            $this->navsPackage->add($dbNav);
-                        }
-
-                        $this->processUpdateTimer($dbCount, $i);
                     }
                 }
+            } catch (\throwable $e) {
+                if (isset($data['scheme_id'])) {
+                    $schemeId = $data['scheme_id'];
+                } else {
+                    $schemeId = $i;
+                }
+
+                $this->basepackages->progress->setErrors([
+                    'error'     => 'Cannot process scheme nav for scheme id# ' . $schemeId,
+                    'message'   => $e->getMessage()
+                ]);
+
+                $this->addResponse('Cannot process scheme nav for scheme id# ' . $schemeId, 1, ['message' => $e->getMessage()]);
+
+                return false;
             }
         }
 
@@ -1008,7 +1025,7 @@ class MfExtractdata extends BasePackage
         }
     }
 
-    protected function fillAmfiNavDays($amfiNavsArr)
+    protected function fillAmfiNavDays($amfiNavsArr, $amfiCode)
     {
         $firstDate = \Carbon\Carbon::parse($this->helper->first($amfiNavsArr)['date']);
         $lastDate = \Carbon\Carbon::parse($this->helper->last($amfiNavsArr)['date']);
@@ -1041,7 +1058,7 @@ class MfExtractdata extends BasePackage
             }
 
             if ($numberOfDays != count($amfiNavs)) {
-                throw new \Exception('Cannot process missing AMFI navs correctly');
+                throw new \Exception('Cannot process missing AMFI navs correctly for amfiCode : ' . $amfiCode);
             }
 
             return $amfiNavs;
@@ -1133,6 +1150,10 @@ class MfExtractdata extends BasePackage
             return $this->processGold($data);
         }
 
+        if ($data['sync'] === 'holidays') {
+            return $this->processBankHolidays($data);
+        }
+
         if (isset($data['api_id'])) {
             if (!$this->initApi($data)) {
                 $this->addResponse('Could not initialize the API.', 1);
@@ -1214,6 +1235,7 @@ class MfExtractdata extends BasePackage
         if (!$amc) {
             $amc = [];
             $amc['name'] = $data['AMC'];
+            $amc['turn_around_time'] = null;
 
             $amc = $this->amcsPackage->addMfAmcs($amc);
 
@@ -1322,6 +1344,524 @@ class MfExtractdata extends BasePackage
         }
 
         $this->addResponse('Imported Gold information successfully');
+
+        return true;
+    }
+
+    protected function processBankHolidays($data)
+    {
+        //Regardless of where you get the data from, verification is required.
+        if ($data['source'] === 'cleartax') {
+            //https://cleartax.in/s/bank-holidays-list-{year}
+            try {
+                if (!$this->localContent->fileExists($this->destDir . $this->today . '-cleartax.html')) {
+                    $this->cleanup('cleartax');
+
+                    $response = $this->remoteWebContent->get('https://cleartax.in/s/bank-holidays-list-' . date('Y'));
+
+                    if ($response->getStatusCode() === 200) {
+                        try {
+                            $this->localContent->write($this->destDir . $this->today . '-cleartax.html', $response->getBody()->getContents());
+                        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                            $this->addResponse($e->getmessage(), 1);
+
+                            return false;
+                        }
+                    } else {
+                        $this->addResponse($response->getStatusCode() . ':' . $response->getMessage(), 1);
+
+                        return false;
+                    }
+                }
+
+                $cleartaxHtml = $this->localContent->read($this->destDir . $this->today . '-cleartax.html');
+
+                if ($cleartaxHtml !== '') {
+                    $dbStatesArr = $this->basepackages->geoStates->searchStatesByCountryId('101');//India
+                    $dbStates = [];
+
+                    foreach ($dbStatesArr as $dbState) {
+                        $firstWord = strtolower(explode(' ', $dbState['name'])[0]);
+
+                        $dbStates[$firstWord] = $dbState['id'];
+                    }
+
+                    $stateMappings = [];
+
+                    $holidays = [];
+
+                    include('vendor/Simplehtmldom.php');
+
+                    $html = file_get_html(base_path($this->destDir . $this->today . '-cleartax.html'));
+
+                    $monthsTables = $html->find('table.ck-table-resized tbody');
+
+                    foreach ($monthsTables as $table) {
+                        foreach ($table->children as $key => $tr) {
+                            $span = $tr->find('span');
+
+                            if (count($span) < 3) {
+                                continue;
+                            }
+
+                            $states = explode(',', $span[2]->plaintext);
+
+                            if ($key === 0) {
+                                if ($states[0] === 'states') {
+                                    continue;
+                                }
+                            }
+
+                            foreach ($states as $state) {
+                                $stateFirstWord = strtolower(explode(' ', trim($state))[0]);
+
+                                if ($stateFirstWord === 'chattisgarh') {
+                                    $stateFirstWord = 'chhattisgarh';//spelling mistake observed in 2025 data.
+                                }
+
+                                if (isset($dbStates[$stateFirstWord])) {
+                                    $stateMappings[$stateFirstWord] = $dbStates[$stateFirstWord];
+                                }
+
+                                try {
+                                    $holidayDate = \Carbon\Carbon::createFromFormat('d F Y', explode(',', $span[0]->plaintext)[0]);
+
+                                    if ($holidayDate->dayOfWeek === 7) {
+                                        continue;
+                                    }
+
+                                    $holidayDate = $holidayDate->toDateString();
+                                } catch (\throwable $e) {
+                                    continue;
+                                }
+
+                                $holidayName = $span[1]->plaintext;
+
+                                if (!isset($holidays[$holidayName])) {
+                                    $holidays[$holidayName] = [];
+                                }
+
+                                if (!isset($holidays[$holidayName][$holidayDate])) {
+                                    $holidays[$holidayName][$holidayDate] = [];
+                                }
+
+                                if (isset($dbStates[$stateFirstWord])) {
+                                    array_push($holidays[$holidayName][$holidayDate], $dbStates[$stateFirstWord]);
+                                }
+                            }
+                        }
+                    }
+
+                    foreach ($holidays as $holidayName => $holidayDates) {
+                        foreach ($holidayDates as $holidayDate => $stateIds) {
+                            $newHoliday = [];
+                            $newHoliday['name'] = $holidayName;
+                            $newHoliday['date'] = $holidayDate;
+                            $newHoliday['country_id'] = '101';
+                            $newHoliday['is_national_holiday'] = false;
+
+                            if (count($stateMappings) === count($stateIds)) {
+                                $newHoliday['is_national_holiday'] = true;
+                                $newHoliday['state_id'] = 0;
+
+                                try {
+                                    $this->basepackages->geoHolidays->addHoliday($newHoliday);
+                                } catch (\throwable $e) {
+                                    continue;
+                                }
+                            } else {
+                                foreach ($stateIds as $stateId) {
+                                    try {
+                                        $newHoliday['state_id'] = $stateId;
+
+                                        $this->basepackages->geoHolidays->addHoliday($newHoliday);
+                                    } catch (\throwable $e) {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (\throwable | UnableToCheckExistence | UnableToWriteFile | UnableToReadFile $e) {
+                $this->addResponse($e->getMessage(), 1);
+
+                return false;
+            }
+        } else if ($data['source'] === 'groww') {
+            //https://groww.in/banking/icici-bank-holidays
+            try {
+                if (!$this->localContent->fileExists($this->destDir . $this->today . '-groww.html')) {
+                    $this->cleanup('groww');
+
+                    $response = $this->remoteWebContent->get('https://groww.in/banking/icici-bank-holidays');
+
+                    if ($response->getStatusCode() === 200) {
+                        try {
+                            $this->localContent->write($this->destDir . $this->today . '-groww.html', $response->getBody()->getContents());
+                        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                            $this->addResponse($e->getmessage(), 1);
+
+                            return false;
+                        }
+                    } else {
+                        $this->addResponse($response->getStatusCode() . ':' . $response->getMessage(), 1);
+
+                        return false;
+                    }
+                }
+
+                $growwHtml = $this->localContent->read($this->destDir . $this->today . '-groww.html');
+
+                if ($growwHtml !== '') {
+                    $dbStatesArr = $this->basepackages->geoStates->searchStatesByCountryId('101');//India
+                    $dbStates = [];
+
+                    foreach ($dbStatesArr as $dbState) {
+                        $firstWord = strtolower(explode(' ', $dbState['name'])[0]);
+
+                        $dbStates[$firstWord] = $dbState['id'];
+                    }
+
+                    $stateMappings = [];
+
+                    $holidays = [];
+
+                    include('vendor/Simplehtmldom.php');
+
+                    $html = str_get_html($growwHtml);
+
+                    $states = $html->find('h3.cs81Heading');
+
+                    foreach ($states as $state) {
+                        $stateFirstWord = strtolower(explode(' ', $state->plaintext)[0]);
+
+                        if (isset($dbStates[$stateFirstWord])) {
+                            $stateMappings[$stateFirstWord] = $dbStates[$stateFirstWord];
+
+                            foreach ($state->parent()->children[1]->children[1]->children[0]->children as $key => $tr) {
+                                if ($key === 0) {
+                                    continue;
+                                }
+
+                                foreach ($tr->find('span') as $span => $spanValue) {
+                                    if ($span === 0) {
+                                        try {
+                                            $holidayDate = \Carbon\Carbon::createFromFormat('d F Y', $spanValue->plaintext);
+
+                                            if ($holidayDate->dayOfWeek === 7) {
+                                                continue;
+                                            }
+
+                                            $holidayDate = $holidayDate->toDateString();
+                                        } catch (\throwable $e) {
+                                            continue;
+                                        }
+                                    }
+
+                                    if ($span === 2) {
+                                        $holidayName = $spanValue->plaintext;
+
+                                        if (!isset($holidays[$holidayName])) {
+                                            $holidays[$holidayName] = [];
+                                        }
+
+                                        if (!isset($holidays[$holidayName][$holidayDate])) {
+                                            $holidays[$holidayName][$holidayDate] = [];
+                                        }
+
+                                        array_push($holidays[$holidayName][$holidayDate], $dbStates[$stateFirstWord]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    foreach ($holidays as $holidayName => $holidayDates) {
+                        foreach ($holidayDates as $holidayDate => $stateIds) {
+                            $newHoliday = [];
+                            $newHoliday['name'] = $holidayName;
+                            $newHoliday['date'] = $holidayDate;
+                            $newHoliday['country_id'] = '101';
+                            $newHoliday['is_national_holiday'] = false;
+
+                            if (count($stateMappings) === count($stateIds)) {
+                                $newHoliday['is_national_holiday'] = true;
+                                $newHoliday['state_id'] = 0;
+
+                                try {
+                                    $this->basepackages->geoHolidays->addHoliday($newHoliday);
+                                } catch (\throwable $e) {
+                                    continue;
+                                }
+                            } else {
+                                foreach ($stateIds as $stateId) {
+                                    try {
+                                        $newHoliday['state_id'] = $stateId;
+
+                                        $this->basepackages->geoHolidays->addHoliday($newHoliday);
+                                    } catch (\throwable $e) {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (\throwable | UnableToCheckExistence | UnableToWriteFile | UnableToReadFile $e) {
+                $this->addResponse($e->getMessage(), 1);
+
+                return false;
+            }
+        // } else if ($data['source'] === 'rbi') {
+        //     //https://website.rbi.org.in/web/rbi/bank-holidays
+        //     //Data is retrieved using Oauth token.
+        //     //You can get the clientID and its secret via inspection of the webpage. Look for the JS code
+        //     //https://website.rbi.org.in/o/oauth2/token
+        //     //client_id=id-a499ea2d-8989-aac5-606e-75769097ea7
+        //     //client_secret=secret-19ca301d-4289-3b31-361f-a6c626962c76
+        //     //grant_type=client_credentials
+        //     //Get States after authorization
+        //     //https://website.rbi.org.in/o/rbi/bank-holidays/get-states-and-legends
+        //     //
+
+        //     try {
+        //         if (!$this->localContent->fileExists($this->destDir . $this->today . '-rbitoken.json')) {
+        //             $this->cleanup('rbi');
+
+        //             $response = $this->remoteWebContent->request(
+        //                 'POST',
+        //                 'https://website.rbi.org.in/o/oauth2/token',
+        //                 [
+        //                     'form_params' =>
+        //                         [
+        //                             'client_id'         =>'id-a499ea2d-8989-aac5-606e-75769097ea7',
+        //                             'client_secret'     =>'secret-19ca301d-4289-3b31-361f-a6c626962c76',
+        //                             'grant_type'        =>'client_credentials'
+        //                         ]
+        //                 ]
+        //             );
+
+        //             if ($response->getStatusCode() === 200) {
+        //                 try {
+        //                     $this->localContent->write($this->destDir . $this->today . '-rbitoken.json', $response->getBody()->getContents());
+        //                 } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+        //                     $this->addResponse($e->getmessage(), 1);
+
+        //                     return false;
+        //                 }
+        //             } else {
+        //                 $this->addResponse($response->getStatusCode() . ':' . $response->getMessage(), 1);
+
+        //                 return false;
+        //             }
+        //         }
+
+        //         $rbiJson = $this->helper->decode($this->localContent->read($this->destDir . $this->today . '-rbitoken.json'), true);
+        //         // trace([$rbiJson]);
+
+        //         if (!$this->localContent->fileExists($this->destDir . $this->today . '-rbistates.json')) {
+        //             $response = $this->remoteWebContent->request(
+        //                 'GET',
+        //                 'https://website.rbi.org.in/o/rbi/bank-holidays/get-states-and-legends?languageCode=en',
+        //                 [
+        //                     'headers' =>
+        //                         [
+        //                             'Authorization' => 'Bearer ' . $rbiJson['access_token']
+        //                         ]
+        //                 ]
+        //             );
+
+        //             if ($response->getStatusCode() === 200) {
+        //                 try {
+        //                     $this->localContent->write($this->destDir . $this->today . '-rbistates.json', $response->getBody()->getContents());
+        //                 } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+        //                     $this->addResponse($e->getmessage(), 1);
+
+        //                     return false;
+        //                 }
+        //             } else {
+        //                 $this->addResponse($response->getStatusCode() . ':' . $response->getMessage(), 1);
+
+        //                 return false;
+        //             }
+        //         }
+
+        //         $rbiStates = $this->helper->decode($this->localContent->read($this->destDir . $this->today . '-rbistates.json'), true);
+
+        //         $dbStatesArr = $this->basepackages->geoStates->searchStatesByCountryId('101');//India
+        //         $dbStates = [];
+
+        //         foreach ($dbStatesArr as $dbState) {
+        //             $firstWord = strtolower(explode(' ', $dbState['name'])[0]);
+
+        //             $dbStates[$firstWord] = $dbState['id'];
+        //         }
+
+        //         $rbiStatesArr = [];
+
+        //         $rbiStatesSorted = msort($rbiStates['listOfStates'], 'stateId');
+
+        //         array_walk($rbiStatesSorted, function($state, $index,) use (&$rbiStatesArr, $dbStates) {
+        //             $stateFirstWord = strtolower(explode(' ', $state['stateName'])[0]);
+
+        //             if (isset($dbStates[$stateFirstWord])) {
+        //                 $rbiStatesArr[$state['stateId']] = $stateFirstWord;
+        //             }
+        //         });
+
+        //         $years = array_reverse($rbiStates['listOfYears']);
+
+        //         //Send POSTRequest to https://website.rbi.org.in/o/rbi/bank-holidays/get-bank-holidays?languageCode=en
+        //         //Request Data {"year":"2025","state":"21","legend":"","month":"all","viewType":"table"}
+        //         foreach ($years as $year) {
+        //             foreach ($rbiStatesArr as $rbiStateArrKey => $rbiStateArrFirstWord) {
+        //                 $response = $this->remoteWebContent->request(
+        //                     'POST',
+        //                     'https://website.rbi.org.in/o/rbi/bank-holidays/get-bank-holidays?languageCode=en',
+        //                     [
+        //                         'headers' =>
+        //                             [
+        //                                 'Authorization' => 'Bearer ' . $rbiJson['access_token'],
+        //                                 'Origin'        => 'https://website.rbi.org.in',
+        //                                 'User-Agent'    => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0',
+        //                                 'Accept'        => 'application/json, text/javascript, */*;',
+        //                                 'Content-Type'  => 'application/json; charset=UTF-8',
+        //                                 'Referer'       => 'https://website.rbi.org.in/web/rbi/bank-holidays',
+        //                                 'Cookie'        => 'lanSelectorPopup-dontShowAgain=true-en; GUEST_LANGUAGE_ID=en_US; COOKIE_SUPPORT=true; _pk_id.6.394a=aab595357ac785c2.1749703629.; cookie-consent=true; cookie=!8xkP/UWXWoBUe7bnh65G0ZLrRPEVSmDuWLPTv1lOFmYCcVw2zdtkQh2es28uwGo5hZnMt79wrdNdGg==; lanSelectorPopup=true-en; mtm_consent=1749703629020; mtm_cookie_consent=1749703629020; JSESSIONID=4NSRWHFFh4moe--Noo5DR-PRyhnM9g4699W3zZGvOYYOcEcNCAyO!-1294097800; TS012a50ed=01af024724c85a94fa5d94e7ed29b14894caa63e46703afa7172a0c13f4b80246ef86fd5a7f359f7466982347dcf1fc6c24658f086e4724dbee2f4a358a61163cc752a3df4966a9fc933a24c44f20343f3f41382a6a2be767191f1a1336ac466632a7906bd421f7934990a9a110dbb37c8e4a19881; LFR_SESSION_STATE_20103=1750507539537; ASLBSA=000358fe6bf303f1c694cc8d4777131ee6a2e67c37d641dc89afe795ce29ee532352; ASLBSACORS=000358fe6bf303f1c694cc8d4777131ee6a2e67c37d641dc89afe795ce29ee532352; _pk_ses.6.394a=1'
+
+        //                             ],
+        //                         'form_params' =>
+        //                             [
+        //                                 'year'          => $year,
+        //                                 'state'         => $rbiStateArrKey,
+        //                                 'legend'        => '',
+        //                                 'month'         => 'all',
+        //                                 'viewType'      => 'table'
+        //                             ]
+        //                     ]
+        //                 );
+        //                 trace([$response]);
+
+        //                 if ($response->getStatusCode() === 200) {
+        //                     trace([$response->getBody()->getContents()]);
+        //                     try {
+        //                         $this->localContent->write($this->destDir . $this->today . '-rbistates.json', $response->getBody()->getContents());
+        //                     } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+        //                         $this->addResponse($e->getmessage(), 1);
+
+        //                         return false;
+        //                     }
+        //                 } else {
+        //                     $this->addResponse($response->getStatusCode() . ':' . $response->getMessage(), 1);
+
+        //                     return false;
+        //                 }
+
+        //             }
+        //             trace([$year]);
+        //         }
+        //         if ($rbiJson !== '') {
+        //             $stateMappings = [];
+
+        //             $holidays = [];
+
+        //             include('vendor/Simplehtmldom.php');
+
+        //             $html = str_get_html($rbiJson);
+
+        //             $states = $html->find('select#stateListSelect');
+        //             trace([count($states[0]->children)]);
+        //             foreach ($states[0]->children as $state) {
+        //                 dump($state);
+        //                 die();
+        //                 $attributes = $state->getAllAttributes();
+        //                 // if (!in_array('data-state-code', $attributes)) {
+        //                 //     continue;
+        //                 // }
+
+        //                 // $stateFirstWord = strtolower(explode(' ', $state->plaintext)[0]);
+
+        //                 // if (isset($dbStates[$stateFirstWord])) {
+        //                 //     $stateMappings[$stateFirstWord] = $dbStates[$stateFirstWord];
+
+        //                 //     foreach ($state->parent()->children[1]->children[1]->children[0]->children as $key => $tr) {
+        //                 //         if ($key === 0) {
+        //                 //             continue;
+        //                 //         }
+
+        //                 //         foreach ($tr->find('span') as $span => $spanValue) {
+        //                 //             if ($span === 0) {
+        //                 //                 try {
+        //                 //                     $holidayDate = \Carbon\Carbon::createFromFormat('d F Y', $spanValue->plaintext);
+
+        //                 //                     if ($holidayDate->dayOfWeek === 7) {
+        //                 //                         continue;
+        //                 //                     }
+
+        //                 //                     $holidayDate = $holidayDate->toDateString();
+        //                 //                 } catch (\throwable $e) {
+        //                 //                     continue;
+        //                 //                 }
+        //                 //             }
+
+        //                 //             if ($span === 2) {
+        //                 //                 $holidayName = $spanValue->plaintext;
+
+        //                 //                 if (!isset($holidays[$holidayName])) {
+        //                 //                     $holidays[$holidayName] = [];
+        //                 //                 }
+
+        //                 //                 if (!isset($holidays[$holidayName][$holidayDate])) {
+        //                 //                     $holidays[$holidayName][$holidayDate] = [];
+        //                 //                 }
+
+        //                 //                 array_push($holidays[$holidayName][$holidayDate], $dbStates[$stateFirstWord]);
+        //                 //             }
+        //                 //         }
+        //                 //     }
+        //                 // }
+        //             }
+        //             die();
+        //             foreach ($holidays as $holidayName => $holidayDates) {
+        //                 foreach ($holidayDates as $holidayDate => $stateIds) {
+        //                     $newHoliday = [];
+        //                     $newHoliday['name'] = $holidayName;
+        //                     $newHoliday['date'] = $holidayDate;
+        //                     $newHoliday['is_national_holiday'] = false;
+
+        //                     if (count($stateMappings) === count($stateIds)) {
+        //                         $newHoliday['is_national_holiday'] = true;
+        //                         $newHoliday['state_id'] = 0;
+
+        //                         try {
+        //                             $this->basepackages->geoHolidays->addHoliday($newHoliday);
+        //                         } catch (\throwable $e) {
+        //                             continue;
+        //                         }
+        //                     } else {
+        //                         foreach ($stateIds as $stateId) {
+        //                             try {
+        //                                 $newHoliday['state_id'] = $stateId;
+
+        //                                 $this->basepackages->geoHolidays->addHoliday($newHoliday);
+        //                             } catch (\throwable $e) {
+        //                                 continue;
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     } catch (\throwable | UnableToCheckExistence | UnableToWriteFile | UnableToReadFile $e) {
+        //         trace([$e]);
+        //         $this->addResponse($e->getMessage(), 1);
+
+        //         return false;
+        //     }
+        }
+
+        $this->addResponse('Imported holiday information via ' . $data['source'] . ' successfully');
 
         return true;
     }
