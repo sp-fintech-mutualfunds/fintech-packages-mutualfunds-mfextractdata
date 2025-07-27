@@ -24,6 +24,8 @@ class MfExtractdata extends BasePackage
 
     protected $today;
 
+    protected $year;
+
     protected $previousDay;
 
     protected $weekAgo;
@@ -54,13 +56,15 @@ class MfExtractdata extends BasePackage
 
     protected $mfFileSizeMatch = [];
 
-    protected $processAll = false;
-
     protected $schemes = [];
 
     protected $amcs = [];
 
     protected $categories = [];
+
+    // protected $sqliteLatest;
+
+    // protected $sqlite;
 
     public function onConstruct()
     {
@@ -81,6 +85,7 @@ class MfExtractdata extends BasePackage
         }
 
         $this->now = \Carbon\Carbon::now(new \DateTimeZone('Asia/Kolkata'));
+        $this->year = $this->now->year;
         $this->today = $this->now->toDateString();
         $this->previousDay = $this->now->subDay(1)->toDateString();
         $this->now = $this->now->addDay(1);
@@ -146,16 +151,16 @@ class MfExtractdata extends BasePackage
         return $this->downloadData($this->sourceLink, $this->destFile);
     }
 
-    protected function downloadMfNavsData($downloadLatestNav = false, $downloadAllNav = true)
+    protected function downloadMfNavsData($downloadLatestNav = true, $downloadAllNav = false)
     {
         $this->method = 'downloadMfNavsData';
 
         if ($downloadLatestNav) {
             try {
-                if (!$this->localContent->fileExists($this->destDir . $this->previousDay . '-latest.db.zst')) {
+                if (!$this->localContent->fileExists($this->destDir . $this->year . '-funds.db.zst') &&
+                    !$this->localContent->fileExists($this->destDir . $this->year . '-funds.db')
+                ) {
                     $this->downloadMfNavsData(false, true);
-
-                    $this->processAll = true;
                 }
 
                 $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/latest.db.zst';
@@ -189,20 +194,21 @@ class MfExtractdata extends BasePackage
         if ($downloadAllNav) {
             $this->sourceLink = 'https://github.com/sp-fintech-mutualfunds/historical-mf-data/releases/latest/download/funds.db.zst';
 
-            $this->destFile = base_path($this->destDir) . $this->today . '-funds.db.zst';
+            $this->destFile = base_path($this->destDir) . $this->year . '-funds.db.zst';
 
             try {
                 //File is already downloaded
-                if ($this->localContent->fileExists($this->destDir . $this->today . '-funds.db.zst')) {
-                    $remoteSize = (int) getRemoteFilesize($this->sourceLink);
+                if ($this->localContent->fileExists($this->destDir . $this->year . '-funds.db.zst')) {
+                    return true;
+                    // $remoteSize = (int) getRemoteFilesize($this->sourceLink);
 
-                    $localSize = $this->localContent->fileSize($this->destDir . $this->today . '-funds.db.zst');
+                    // $localSize = $this->localContent->fileSize($this->destDir . $this->year . '-funds.db.zst');
 
-                    if ($remoteSize === $localSize) {
-                        $this->mfFileSizeMatch['funds'] = true;
+                    // if ($remoteSize === $localSize) {
+                    //     $this->mfFileSizeMatch['funds'] = true;
 
-                        return true;
-                    }
+                    //     return true;
+                    // }
                 }
             } catch (FilesystemException | UnableToCheckExistence | UnableToDeleteFile | UnableToRetrieveMetadata | \throwable $e) {
                 $this->addResponse($e->getMessage(), 1);
@@ -283,10 +289,18 @@ class MfExtractdata extends BasePackage
 
             if ($scanDir && count($scanDir['files']) > 0) {
                 foreach ($scanDir['files'] as $file) {
-                    if (!str_starts_with($file, $this->today) &&
-                        str_contains($file, $type)
-                    ) {
-                        $this->localContent->delete($file);
+                    if ($type === '-funds') {
+                        if (!str_starts_with($file, $this->year) &&
+                            str_contains($file, $type)
+                        ) {
+                            $this->localContent->delete($file);
+                        }
+                    } else {
+                        if (!str_starts_with($file, $this->today) &&
+                            str_contains($file, $type)
+                        ) {
+                            $this->localContent->delete($file);
+                        }
                     }
                 }
             }
@@ -299,7 +313,7 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function extractMfSchemesData($extractLatestNav = false, $extractAllNav = true)
+    protected function extractMfSchemesData()
     {
         try {
             //Decompress
@@ -317,7 +331,7 @@ class MfExtractdata extends BasePackage
         }
     }
 
-    protected function extractMfNavsData($extractLatestNav = false, $extractAllNav = true)
+    protected function extractMfNavsData($extractLatestNav = true)
     {
         $this->method = 'extractMfNavsData';
 
@@ -329,10 +343,10 @@ class MfExtractdata extends BasePackage
             }
         }
 
-        if ($extractAllNav) {
-            if ($this->localContent->fileExists($this->destDir . $this->today . '-funds.db.zst')) {
-                array_push($files, '-funds');
-            }
+        if ($this->localContent->fileExists($this->destDir . $this->year . '-funds.db.zst') &&
+            !$this->localContent->fileExists($this->destDir . $this->year . '-funds.db')
+        ) {
+            array_push($files, '-funds');
         }
 
         if (count($files) === 0) {
@@ -343,26 +357,32 @@ class MfExtractdata extends BasePackage
 
         foreach ($files as $file) {
             try {
-                if ($this->localContent->fileExists($this->destDir . $this->today . $file . '.db')) {
-                    if (str_contains($file, '-latest')) {
+                if (str_contains($file, '-latest')) {
+                    if ($this->localContent->fileExists($this->destDir . $this->today . $file . '.db')) {
                         if (isset($this->mfFileSizeMatch) &&
                             $this->mfFileSizeMatch['latest'] === true
-                        ) {//If compressed file match, the decompressed and indexed will also match.
-                            continue;
-                        }
-                    } else if (str_contains($file, '-funds')) {
-                        if (isset($this->mfFileSizeMatch) &&
-                            $this->mfFileSizeMatch['funds'] === true
                         ) {//If compressed file match, the decompressed and indexed will also match.
                             continue;
                         }
                     }
 
                     $this->localContent->delete($this->destDir . $this->today . $file . '.db');
+
+                    $file = $this->today . $file;
+                } else if (str_contains($file, '-funds')) {
+                    // if (isset($this->mfFileSizeMatch) &&
+                    //     $this->mfFileSizeMatch['funds'] === true
+                    // ) {//If compressed file match, the decompressed and indexed will also match.
+                    //     continue;
+                    // }
+
+                    $this->localContent->delete($this->destDir . $this->year . $file . '.db');
+
+                    $file = $this->year . $file;
                 }
 
                 //Decompress
-                exec('unzstd -d -f ' . base_path($this->destDir) . $this->today . $file . '.db.zst -o ' . base_path($this->destDir) . $this->today . $file . '.db', $output, $result);
+                exec('unzstd -d -f ' . base_path($this->destDir) . $file . '.db.zst -o ' . base_path($this->destDir) . $file . '.db', $output, $result);
                 if (PHP_SAPI !== 'cli') {
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
@@ -376,7 +396,7 @@ class MfExtractdata extends BasePackage
                 }
 
                 //Create INDEXES
-                exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
+                exec("echo 'CREATE INDEX \"nav-main\" ON \"nav\" (\"date\",\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $file . ".db", $output, $result);
                 if (PHP_SAPI !== 'cli') {
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
@@ -389,7 +409,7 @@ class MfExtractdata extends BasePackage
                     return $this->indexingFail($output);
                 }
 
-                exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
+                exec("echo 'CREATE INDEX \"nav-scheme\" ON \"nav\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $file . ".db", $output, $result);
                 if (PHP_SAPI !== 'cli') {
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
@@ -402,7 +422,7 @@ class MfExtractdata extends BasePackage
                     return $this->indexingFail($output);
                 }
 
-                exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
+                exec("echo 'CREATE INDEX \"securities-scheme\" ON \"securities\" (\"scheme_code\")' | sqlite3 " . base_path($this->destDir) . $file . ".db", $output, $result);
                 if (PHP_SAPI !== 'cli') {
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
@@ -415,7 +435,7 @@ class MfExtractdata extends BasePackage
                     return $this->indexingFail($output);
                 }
 
-                exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $this->today . $file . ".db", $output, $result);
+                exec("echo 'CREATE INDEX \"securities-isin\" ON \"securities\" (\"isin\")' | sqlite3 " . base_path($this->destDir) . $file . ".db", $output, $result);
                 if (PHP_SAPI !== 'cli') {
                     $this->basepackages->progress->updateProgress(
                         method: $this->method,
@@ -483,7 +503,13 @@ class MfExtractdata extends BasePackage
                     continue;
                 }
 
-                if (str_contains(strtolower($line['Scheme NAV Name']), 'regular')) {//For personal use, we dont want regular expense ratio type.
+                $schemeName = strtolower($line['Scheme NAV Name']);
+                if (str_contains($schemeName, 'regular') ||
+                    str_contains($schemeName, 'idcw') ||
+                    str_contains($schemeName, 'dividend') ||
+                    str_contains($schemeName, 'etf') ||
+                    str_contains($schemeName, 'income distribution')
+                ) {//For personal use, we dont want regular expense ratio type.
                     continue;
                 }
 
@@ -587,30 +613,32 @@ class MfExtractdata extends BasePackage
 
                 $scheme['amc_id'] = $amc['id'];
                 $scheme['id'] = (int) $line['Code'];
+                $scheme['amfi_code'] = $line['Code'];
                 $scheme['scheme_type'] = $line['Scheme Type'];
                 $scheme['category_id'] = $category['id'];
                 $scheme['name'] = $line['Scheme NAV Name'];
                 $scheme['scheme_name'] = $line['Scheme Name'];
-                if (str_contains(strtolower($line['Scheme NAV Name']), 'direct')) {
+                $scheme['launch_date'] = null;
+                $scheme['latest_nav'] = 0;
+                if ($line['Launch Date'] !== '') {
+                    $scheme['launch_date'] = (\Carbon\Carbon::parse($line['Launch Date']))->toDateString();
+                }
+                $scheme['minimum_amount'] = null;
+                if ($line['Scheme Minimum Amount'] !== '') {
+                    $scheme['minimum_amount'] = $line['Scheme Minimum Amount'];
+                }
+
+                if (str_contains($schemeName, 'direct')) {
                     $scheme['expense_ratio_type'] = 'Direct';
-                // } else if (str_contains(strtolower($line['Scheme NAV Name']), 'regular')) {
-                //     $scheme['expense_ratio_type'] = 'Regular';
                 } else {
-                    // $scheme['expense_ratio_type'] = 'Direct';
                     continue;
                 }
-                if (str_contains(strtolower($line['Scheme NAV Name']), 'growth')) {
+                if (str_contains($schemeName, 'growth')) {
                     $scheme['plan_type'] = 'Growth';
-                // } else if (str_contains(strtolower($line['Scheme NAV Name']), 'idcw') ||
-                //            str_contains(strtolower($line['Scheme NAV Name']), 'dividend') ||
-                //            str_contains(strtolower($line['Scheme NAV Name']), 'income distribution')
-                // ) {
-                //     $scheme['plan_type'] = 'IDCW';
                 } else {
-                    // $scheme['plan_type'] = 'Growth';
                     continue;
                 }
-                if (str_contains(strtolower($line['Scheme NAV Name']), 'passive')) {
+                if (str_contains($schemeName, 'passive')) {
                     $scheme['management_type'] = 'Passive';
                 } else {
                     $scheme['management_type'] = 'Active';
@@ -665,591 +693,407 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function processMfNavsData($processLatestNav = false, $processAllNav = true, $data = [])
+    protected function processMfNavsData($data = [])
     {
         $this->method = 'processMfNavsData';
 
-        if ($this->processAll) {
-            $processLatestNav = false;
-            $processAllNav = true;
-        }
-
-        if ($processLatestNav && count($data) === 0) {
-            if (!$sqlite = $this->initDb('latest', $data)) {
-                return false;
-            }
-
-            $this->navsPackage = new MfNavs;
-            $this->schemesPackage = new MfSchemes;
-
-            $dbCount = $this->schemesPackage->getDbCount(true);
-
-            if ($dbCount > 0) {
-                for ($i = 1; $i <= $dbCount; $i++) {
-                    $this->basepackages->utils->setMicroTimer('Start');
-
-                    if (isset($data['scheme_id'])) {
-                        $scheme = $this->schemesPackage->getById((int) $data['scheme_id']);
-                    } else {
-                        $scheme = $this->schemesPackage->getById($i);
-                    }
-
-                    if ($scheme) {
-                        $amfiCode = $scheme['amfi_code'];
-
-                        $amfiNavs = $sqlite->query(
-                            "SELECT * from nav N
-                            JOIN securities S ON N.scheme_code = S.scheme_code
-                            WHERE S.scheme_code = '" . $amfiCode . "' AND S.type = '0'
-                            ORDER BY N.date ASC"
-                        )->fetchAll(Enum::FETCH_ASSOC);
-
-                        if (!$amfiNavs) {
-                            $this->processUpdateTimer($dbCount, $i + 1);
-
-                            continue;
-                        }
-
-                        $amfiNavs = $this->fillAmfiNavDays($amfiNavs, $amfiCode);
-
-                        $dbNav = $this->navsPackage->getMfNavsByAmfiCode($amfiCode);
-
-                        if (!$dbNav) {
-                            $dbNav = [];
-                            $dbNav['amfi_code'] = $scheme['amfi_code'];
-                            $dbNav['navs'] = [];
-                        }
-
-                        if ($amfiNavs && count($amfiNavs) === 1) {
-                            if ($amfiNavs[0]['date']) {
-                                $dbNav['last_updated'] = $amfiNavs[0]['date'];
-                            } else {
-                                $dbNav['last_updated'] = $this->today;
-                            }
-
-                            if (isset($amfiNavs[0]['nav'])) {
-                                $dbNav['latest_nav'] = $amfiNavs[0]['nav'];
-                            } else {
-                                $dbNav['latest_nav'] = 0;
-                            }
-
-                            if (!isset($dbNav['navs'][$amfiNavs[0]['date']])) {
-                                $date = \Carbon\Carbon::parse($amfiNavs[0]['date']);
-                                $dbNav['navs'][$amfiNavs[0]['date']]['nav'] = $amfiNavs[0]['nav'];
-                                $dbNav['navs'][$amfiNavs[0]['date']]['date'] = $amfiNavs[0]['date'];
-                                $dbNav['navs'][$amfiNavs[0]['date']]['timestamp'] = $date->timestamp;
-                                $previousDay = $date->subDay(1)->toDateString();
-
-                                if (isset($dbNav['navs'][$previousDay])) {
-                                    $dbNav['navs'][$amfiNavs[0]['date']]['diff'] =
-                                        numberFormatPrecision($amfiNavs[0]['nav'] - $dbNav['navs'][$previousDay]['nav'], 4);
-                                    $dbNav['navs'][$amfiNavs[0]['date']]['diff_percent'] =
-                                        numberFormatPrecision(($amfiNavs[0]['nav'] * 100 / $dbNav['navs'][$previousDay]['nav']) - 100, 2);
-
-                                    $dbNav['navs'][$amfiNavs[0]['date']]['trajectory'] = '-';
-                                    if ($amfiNavs[0]['nav'] > $dbNav['navs'][$previousDay]['nav']) {
-                                        $dbNav['navs'][$amfiNavs[0]['date']]['trajectory'] = 'up';
-                                    } else {
-                                        $dbNav['navs'][$amfiNavs[0]['date']]['trajectory'] = 'down';
-                                    }
-
-                                    $dbNav['navs'][$amfiNavs[0]['date']]['diff_since_inception'] =
-                                        numberFormatPrecision($amfiNavs[0]['nav'] - $this->helper->first($dbNav['navs'])['nav'], 4);
-                                    $dbNav['navs'][$amfiNavs[0]['date']]['diff_percent_since_inception'] =
-                                        numberFormatPrecision(($amfiNavs[0]['nav'] * 100 / $this->helper->first($dbNav['navs'])['nav'] - 100), 2);
-                                }
-                            }
-
-                            $this->createChunks($dbNav);
-                        } else {
-                            $dbNav['last_updated'] = $this->today;
-                            $dbNav['latest_nav'] = 0;
-                        }
-
-                        if (isset($dbNav['id'])) {
-                            $this->navsPackage->update($dbNav);
-                        } else {
-                            $this->navsPackage->add($dbNav);
-                        }
-
-                        $this->processUpdateTimer($dbCount, $i + 1);
-                    }
-                }
-            }
-        }
-
-        if ($processAllNav) {
-            if (!$sqlite = $this->initDb('funds', $data)) {
-                $this->addResponse('Cannot open DB', 1);
-
-                return false;
-            }
-
-            try {
-                // if (!$this->navsPackage) {
-                //     $this->navsPackage = $this->usePackage(MfNavs::class);
-                // }
-                // if (!$this->schemesPackage) {
-                //     $this->schemesPackage = $this->usePackage(MfSchemes::class);
-                // }
-
-                // $lastUpdated = $this->weekAgo;
-
-                // if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
-                    $lastUpdated = '2000-01-01';
-                // }
-
-                //Subtract year on every Sunday
-                // if (!isset($data['get_all_navs']) && $this->now->dayOfWeek === 0) {
-                //     $lastUpdated = $this->now->subYear()->toDateString();
-                // }
-
-                if (isset($data['scheme_id'])) {
-                    try {
-                        if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $data['scheme_id'] . '.json')) {
-                            $this->schemes = [$this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes/data/' . $data['scheme_id'] . '.json'), true)];
-
-                            $dbCount = 1;
-                        } else {
-                            $this->addResponse('Scheme with ID does not exists', 1);
-
-                            return false;
-                        }
-                    } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
-                        $this->addResponse($e->getMessage(), 1);
-
-                        return false;
-                    }
-                } else {
-                    if (!$this->schemesPackage) {
-                        $this->schemesPackage = $this->usePackage(MfSchemes::class);
-                    }
-
-                    $this->schemes = $this->schemesPackage->getAll()->mfschemes;
-
-                    $dbCount = count($this->schemes);
-
-                    if ($dbCount === 0) {
-                        $this->addResponse('No Schemes found, Import schemes data first.', 1);
-
-                        return false;
-                    }
-                }
-
-                $this->schemes = msort($this->schemes, 'id');
-
-                for ($i = 0; $i < $dbCount; $i++) {
-                    $this->basepackages->utils->setMicroTimer('Start');
-
-                    $amfiNavs = $sqlite->query(
-                        "SELECT * from nav N
-                        JOIN securities S ON N.scheme_code = S.scheme_code
-                        WHERE S.scheme_code = '" . $this->schemes[$i]['id'] . "' AND S.type = '0'
-                        AND N.date >= '$lastUpdated'
-                        ORDER BY N.date ASC"
-                    )->fetchAll(Enum::FETCH_ASSOC);
-
-                    if (!$amfiNavs ||
-                        ($amfiNavs && count($amfiNavs) === 0)
-                    ) {
-                        $amfiNavs = $sqlite->query(
-                            "SELECT * from nav N
-                            JOIN securities S ON N.scheme_code = S.scheme_code
-                            WHERE S.scheme_code = '" . $this->schemes[$i]['id'] . "' AND S.type = '1'
-                            AND N.date >= '$lastUpdated'
-                            ORDER BY N.date ASC"
-                        )->fetchAll(Enum::FETCH_ASSOC);
-
-                        if (!$amfiNavs ||
-                            ($amfiNavs && count($amfiNavs) === 0)
-                        ) {
-                            try {
-                                if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
-                                    $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
-
-                                    unset($this->schemes[$this->schemes[$i]['id']]);
-
-                                    $this->processUpdateTimer($dbCount, $i + 1);
-
-                                    continue;
-                                }
-                            } catch (FilesystemException | UnableToDeleteFile | UnableToCheckExistence | \throwable $e) {
-                                $this->addResponse($e->getMessage(), 1);
-
-                                return false;
-                            }
-                        }
-                    }
-
-                    if (!isset($this->schemes[$i]['start_date'])) {
-                        $this->schemes[$i]['start_date'] = $this->helper->first($amfiNavs)['date'];
-
-                        try {
-                            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
-                        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
-
-                            return false;
-                        }
-                    } else if (isset($this->schemes[$i]['start_date']) &&
-                               $this->schemes[$i]['start_date'] != $this->helper->first($amfiNavs)['date']
-                    ) {
-                        $this->schemes[$i]['start_date'] = $this->helper->first($amfiNavs)['date'];
-
-                        try {
-                            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
-                        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
-
-                            return false;
-                        }
-                    }
-
-                    $dbNav = null;
-
-                    try {
-                        if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $this->schemes[$i]['id'] . '.json')) {
-                            $dbNav = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $this->schemes[$i]['id'] . '.json'), true);
-                        }
-                    } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
-                        $this->addResponse($e->getMessage(), 1);
-
-                        return false;
-                    }
-
-                    // if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0 &&
-                    //     isset($dbNav['last_updated']) &&
-                    //     !isset($data['get_all_navs']) &&
-                    //     $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
-                    // ) {
-                    //     $this->processUpdateTimer($dbCount, $i + 1);
-
-                    //     continue;
-                    // }
-
-                    $amfiNavs = $this->fillAmfiNavDays($amfiNavs, $this->schemes[$i]['id']);
-                    $amfiNavs = msort($amfiNavs, 'date');
-
-                    if (!$dbNav) {
-                        $dbNav = [];
-                        $dbNav['id'] = (int) $this->schemes[$i]['id'];
-                        $dbNav['navs'] = [];
-                    } else {
-                        if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
-                            if (!isset($dbNav['navs'])) {
-                                $dbNav['navs'] = [];
-                            }
-                        }
-                    }
-
-                    $dbNav['last_updated'] = $this->helper->last($amfiNavs)['date'];
-                    $dbNav['latest_nav'] = $this->helper->last($amfiNavs)['nav'];
-
-                    $newdata = false;
-
-                    foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
-                        if (!isset($dbNav['navs'][$amfiNav['date']])) {
-                            $newdata = true;
-                            $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
-                            $dbNav['navs'][$amfiNav['date']]['date'] = $amfiNav['date'];
-                            $dbNav['navs'][$amfiNav['date']]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
-
-                            if ($amfiNavKey !== 0) {
-                                $previousDay = $amfiNavs[$amfiNavKey - 1];
-
-                                $dbNav['navs'][$amfiNav['date']]['diff'] =
-                                    numberFormatPrecision($amfiNav['nav'] - $previousDay['nav'], 4);
-                                $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
-                                    numberFormatPrecision(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2);
-
-                                $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
-                                if ($amfiNav['nav'] > $previousDay['nav']) {
-                                    $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'up';
-                                } else {
-                                    $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'down';
-                                }
-
-                                if ($amfiNavKey === $this->helper->lastKey($amfiNavs)) {
-                                    $dbNav['diff'] = $dbNav['navs'][$amfiNav['date']]['diff'];
-                                    $dbNav['diff_percent'] = $dbNav['navs'][$amfiNav['date']]['diff_percent'];
-                                    $dbNav['trajectory'] = $dbNav['navs'][$amfiNav['date']]['trajectory'];
-                                }
-
-                                if ($amfiNavKey !== 0) {
-                                    $dbNav['navs'][$amfiNav['date']]['diff_since_inception'] =
-                                        numberFormatPrecision($amfiNav['nav'] - $amfiNavs[0]['nav'], 4);
-                                    $dbNav['navs'][$amfiNav['date']]['diff_percent_since_inception'] =
-                                        numberFormatPrecision(($amfiNav['nav'] * 100 / $amfiNavs[0]['nav'] - 100), 2);
-                                }
-                            }
-                        }
-                    }
-
-                    // if (!$newdata) {
-                    //     $this->processUpdateTimer($dbCount, $i + 1);
-
-                    //     continue;
-                    // }
-
-                    if (!$this->createChunks($dbNav)) {
-                        return false;
-                    }
-
-                    $dbNav['navs'] = msort(array: $dbNav['navs'], key: 'timestamp', preserveKey: true);
-
-                    if (!$this->createRollingReturns($dbNav, $i)) {
-                        return false;
-                    }
-
-                    if ($this->config->databasetype === 'db') {
-                        $this->db->insertAsDict('apps_fintech_mf_navs', $dbNav);
-                    } else {
-                        try {
-                            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($dbNav));
-                        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
-
-                            return false;
-                        }
-
-                        $this->schemes[$i]['navs_last_updated'] = $dbNav['last_updated'];
-
-                        try {
-                            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
-                        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
-
-                            return false;
-                        }
-                    }
-
-                    $this->processUpdateTimer($dbCount, $i + 1);
-                }
-            } catch (\throwable $e) {
-                if (isset($data['scheme_id'])) {
-                    $schemeId = $data['scheme_id'];
-                } else {
-                    $schemeId = $this->schemes[$i]['id'];
-                }
-
-                $this->basepackages->progress->setErrors([
-                    'error'     => 'Cannot process scheme nav for scheme id# ' . $schemeId,
-                    'message'   => $e->getMessage()
-                ]);
-
-                $this->addResponse('Cannot process scheme nav for scheme id# ' . $schemeId, 1, ['message' => $e->getMessage()]);
-
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    protected function createChunks($dbNav)
-    {
         try {
-            if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs_chunks/data/' . $dbNav['id'] . '.json')) {
-                $chunks = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs_chunks/data/' . $dbNav['id'] . '.json'), true);
+            // if ((!$this->sqliteLatest && $processLatestNav) ||
+            //     count($data) > 0
+            // ) {
+                $sqliteLatest = (new Sqlite())->init(base_path($this->destDir . $this->today . '-latest.db'));
+            // }
 
-                if (isset($chunks['navs_chunks']['all']) && count($chunks['navs_chunks']['all']) > 0) {
-                    if ($this->helper->last($chunks['navs_chunks']['all'])['date'] === $this->helper->last($dbNav['navs'])['date']) {
-                        return true;
-                    }
-                }
-            } else {
-                $chunks = [];
-                $chunks['id'] = (int) $dbNav['id'];
-                $chunks['last_updated'] = $dbNav['last_updated'];
-            }
-        } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
+            // if ((!$this->sqlite && $processAllNav) ||
+            //     count($data) > 0
+            // ) {
+                $sqlite = (new Sqlite())->init(base_path($this->destDir . $this->year . '-funds.db'));
+            // }
+        } catch (\throwable $e) {
+            trace([$e]);
             $this->addResponse($e->getMessage(), 1);
 
             return false;
         }
 
-        $dbNavNavs = msort($dbNav['navs'], 'timestamp');
+        try {
+            if (isset($data['scheme_id'])) {
+                try {
+                    if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $data['scheme_id'] . '.json')) {
+                        $this->schemes = [$this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes/data/' . $data['scheme_id'] . '.json'), true)];
 
-        $totalNavs = count($dbNavNavs);
+                        $dbCount = 1;
+                    } else {
+                        $this->addResponse('Scheme with ID does not exists', 1);
 
-        if ($totalNavs > 1) {
-            if ($totalNavs > 7) {
-                $forWeek = $totalNavs - 7;
-                $forWeekStartNav = $dbNavNavs[$forWeek]['nav'];
+                        return false;
+                    }
+                } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
+                    $this->addResponse($e->getMessage(), 1);
+
+                    return false;
+                }
             } else {
-                $forWeek = $totalNavs;
-                $forWeekStartNav = $dbNavNavs[0]['nav'];
+                if (!$this->schemesPackage) {
+                    $this->schemesPackage = $this->usePackage(MfSchemes::class);
+                }
+
+                $this->schemes = $this->schemesPackage->getAll()->mfschemes;
+
+                $dbCount = count($this->schemes);
+
+                if ($dbCount === 0) {
+                    $this->addResponse('No Schemes found, Import schemes data first.', 1);
+
+                    return false;
+                }
             }
 
-            $chunks['navs_chunks']['week'] = [];
-            for ($forWeek; $forWeek < $totalNavs; $forWeek++) {
-                $chunks['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']] = [];
-                $chunks['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['date'] = $dbNavNavs[$forWeek]['date'];
-                $chunks['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['nav'] = $dbNavNavs[$forWeek]['nav'];
-                $chunks['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forWeek]['nav'] - $forWeekStartNav, 4);
-                $chunks['navs_chunks']['week'][$dbNavNavs[$forWeek]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forWeek]['nav'] * 100 / $forWeekStartNav - 100), 2);
+            $this->schemes = msort($this->schemes, 'id');
+
+            for ($i = 0; $i < $dbCount; $i++) {
+                // if ($this->schemes[$i]['id'] != 153644) {
+                //     continue;
+                // }
+
+                $this->basepackages->utils->setMicroTimer('Start');
+
+                $amfiNavsArr = array_merge(
+                    $sqlite->query(
+                    "SELECT * from nav N
+                    JOIN securities S ON N.scheme_code = S.scheme_code
+                    WHERE S.scheme_code = '" . $this->schemes[$i]['id'] . "' AND S.type = '0'
+                    AND N.date >= 2000-01-01
+                    ORDER BY N.date ASC"
+                    )->fetchAll(Enum::FETCH_ASSOC),
+                    $sqliteLatest->query(
+                        "SELECT * from nav N
+                        JOIN securities S ON N.scheme_code = S.scheme_code
+                        WHERE S.scheme_code = '" . $this->schemes[$i]['id'] . "' AND S.type = '0'
+                        AND N.date >= 2000-01-01
+                        ORDER BY N.date ASC"
+                    )->fetchAll(Enum::FETCH_ASSOC)
+                );
+
+                if (!$amfiNavsArr ||
+                    ($amfiNavsArr && count($amfiNavsArr) === 0)
+                ) {
+                    $amfiNavsArr = array_merge(
+                        $sqlite->query(
+                        "SELECT * from nav N
+                        JOIN securities S ON N.scheme_code = S.scheme_code
+                        WHERE S.scheme_code = '" . $this->schemes[$i]['id'] . "' AND S.type = '1'
+                        AND N.date >= 2000-01-01
+                        ORDER BY N.date ASC"
+                        )->fetchAll(Enum::FETCH_ASSOC),
+                        $sqliteLatest->query(
+                            "SELECT * from nav N
+                            JOIN securities S ON N.scheme_code = S.scheme_code
+                            WHERE S.scheme_code = '" . $this->schemes[$i]['id'] . "' AND S.type = '1'
+                            AND N.date >= 2000-01-01
+                            ORDER BY N.date ASC"
+                        )->fetchAll(Enum::FETCH_ASSOC)
+                    );
+
+                    if (!$amfiNavsArr ||
+                        ($amfiNavsArr && count($amfiNavsArr) === 0)
+                    ) {
+                        try {
+                            if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
+                                $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
+
+                                unset($this->schemes[$this->schemes[$i]['id']]);
+
+                                $this->processUpdateTimer($dbCount, $i + 1);
+
+                                continue;
+                            }
+                        } catch (FilesystemException | UnableToDeleteFile | UnableToCheckExistence | \throwable $e) {
+                            $this->addResponse($e->getMessage(), 1);
+
+                            return false;
+                        }
+                    }
+                }
+
+                if (count($amfiNavsArr) <= 2) {
+                    if ($amfiNavsArr[0]['date'] === $amfiNavsArr[1]['date']) {
+                        try {
+                            if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
+                                $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
+
+                                unset($this->schemes[$this->schemes[$i]['id']]);
+
+                                $this->processUpdateTimer($dbCount, $i + 1);
+
+                                continue;
+                            }
+                        } catch (FilesystemException | UnableToDeleteFile | UnableToCheckExistence | \throwable $e) {
+                            $this->addResponse($e->getMessage(), 1);
+
+                            return false;
+                        }
+                    }
+                }
+
+                if (!isset($this->schemes[$i]['start_date']) ||
+                    (isset($this->schemes[$i]['start_date']) && $this->schemes[$i]['start_date'] != $this->helper->first($amfiNavsArr)['date'])
+                ) {
+                    $this->schemes[$i]['start_date'] = $this->helper->first($amfiNavsArr)['date'];
+
+                    try {
+                        $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
+                    } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                        $this->addResponse($e->getMessage(), 1);
+
+                        return false;
+                    }
+                }
+
+                $amfiNavs = [];
+
+                for ($amfiNavsArrKey = 0; $amfiNavsArrKey < count($amfiNavsArr); $amfiNavsArrKey++) {
+                    $amfiNavs[$amfiNavsArr[$amfiNavsArrKey]['date']] = $amfiNavsArr[$amfiNavsArrKey];
+                }
+
+                $dbNav = null;
+
+                try {
+                    if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $this->schemes[$i]['id'] . '.json')) {
+                        $dbNav = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $this->schemes[$i]['id'] . '.json'), true);
+                    }
+                } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
+                    $this->addResponse($e->getMessage(), 1);
+
+                    return false;
+                }
+
+                if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0 &&
+                    isset($dbNav['last_updated']) &&
+                    !isset($data['get_all_navs']) &&
+                    $this->helper->last($amfiNavs)['date'] === $dbNav['last_updated']
+                ) {
+                    $this->processUpdateTimer($dbCount, $i + 1);
+
+                    continue;
+                }
+
+                if (!$dbNav) {
+                    $dbNav = [];
+                    $dbNav['id'] = (int) $this->schemes[$i]['id'];
+                    $dbNav['navs'] = [];
+                } else {
+                    if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+                        $dbNav['navs'] = [];
+                    }
+                }
+
+                $dbNav['last_updated'] = $this->helper->last($amfiNavs)['date'];
+
+                $newNavs = false;
+
+                if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+                    $amfiNavs = array_values($amfiNavs);
+                } else {
+                    if (count($dbNav['navs']) > 0) {
+                        $amfiNavsKeysDiff = array_diff(array_keys($amfiNavs), array_keys($dbNav['navs']));
+
+                        if (count($amfiNavsKeysDiff) > 0) {
+                            $amfiNavs = array_values(array_slice($amfiNavs, $this->helper->firstKey($amfiNavsKeysDiff) - 2));//Get previous day for diff
+
+                            $newNavs = [];
+                        }
+                    } else {
+                        $amfiNavs = array_values($amfiNavs);
+                    }
+                }
+
+                $amfiNavs = $this->fillAmfiNavDays($amfiNavs, $this->schemes[$i]['id']);
+
+                if (count($amfiNavs) === 0) {
+                    $this->processUpdateTimer($dbCount, $i + 1);
+
+                    continue;
+                }
+
+                foreach ($amfiNavs as $amfiNavKey => $amfiNav) {
+                    if (!isset($dbNav['navs'][$amfiNav['date']])) {
+                        $dbNav['navs'][$amfiNav['date']]['nav'] = $amfiNav['nav'];
+                        $dbNav['navs'][$amfiNav['date']]['date'] = $amfiNav['date'];
+                        $dbNav['navs'][$amfiNav['date']]['timestamp'] = \Carbon\Carbon::parse($amfiNav['date'])->timestamp;
+
+                        if ($amfiNavKey !== 0) {
+                            $previousDay = $amfiNavs[$amfiNavKey - 1];
+
+                            $dbNav['navs'][$amfiNav['date']]['diff'] =
+                                numberFormatPrecision($amfiNav['nav'] - $previousDay['nav'], 4);
+                            $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
+                                numberFormatPrecision(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2);
+
+                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
+                            if ($amfiNav['nav'] > $previousDay['nav']) {
+                                $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'up';
+                            } else {
+                                $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'down';
+                            }
+
+                            $dbNav['navs'][$amfiNav['date']]['diff_since_inception'] =
+                                numberFormatPrecision($amfiNav['nav'] - $amfiNavs[0]['nav'], 4);
+                            $dbNav['navs'][$amfiNav['date']]['diff_percent_since_inception'] =
+                                numberFormatPrecision(($amfiNav['nav'] * 100 / $amfiNavs[0]['nav'] - 100), 2);
+                        }
+
+                        if ($newNavs !== false) {
+                            $newNavs[$amfiNav['date']] = $dbNav['navs'][$amfiNav['date']];
+                        }
+                    }
+                }
+
+                $dbNav['navs'] = msort(array: $dbNav['navs'], key: 'timestamp', preserveKey: true);
+                $newNavs = msort(array: $newNavs, key: 'timestamp', preserveKey: true);
+
+                if (!$this->createChunks($dbNav, $data, $newNavs)) {
+                    return false;
+                }
+
+                if (!$this->createRollingReturns($dbNav, $i, $data, $newNavs)) {
+                    return false;
+                }
+
+                if ($this->config->databasetype === 'db') {
+                    $this->db->insertAsDict('apps_fintech_mf_navs', $dbNav);
+                } else {
+                    try {
+                        $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($dbNav));
+                    } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                        $this->addResponse($e->getMessage(), 1);
+
+                        return false;
+                    }
+
+                    $this->schemes[$i]['navs_last_updated'] = $dbNav['last_updated'];
+                    $this->schemes[$i]['latest_nav'] = $this->helper->last($dbNav['navs'])['nav'];
+
+                    try {
+                        $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
+                    } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                        $this->addResponse($e->getMessage(), 1);
+
+                        return false;
+                    }
+                }
+
+                $this->processUpdateTimer($dbCount, $i + 1);
+            }
+        } catch (\throwable $e) {
+            trace([$amfiNavs, $e]);
+            if (isset($data['scheme_id'])) {
+                $schemeId = $data['scheme_id'];
+            } else {
+                $schemeId = $this->schemes[$i]['id'];
+            }
+
+            $this->basepackages->progress->setErrors([
+                'error'     => 'Cannot process scheme nav for scheme id# ' . $schemeId,
+                'message'   => $e->getMessage()
+            ]);
+
+            $this->addResponse('Cannot process scheme nav for scheme id# ' . $schemeId, 1, ['message' => $e->getMessage()]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function createChunks($dbNav, $data, $newNavs = false)
+    {
+        if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+            $chunks = [];
+            $chunks['id'] = (int) $dbNav['id'];
+            $chunks['last_updated'] = $dbNav['last_updated'];
+            $chunks['navs_chunks']['all'] = $dbNav['navs'];
+        } else {
+            try {
+                if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs_chunks/data/' . $dbNav['id'] . '.json')) {
+                    $chunks = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs_chunks/data/' . $dbNav['id'] . '.json'), true);
+
+                    if (isset($chunks['navs_chunks']['all']) && count($chunks['navs_chunks']['all']) > 0) {
+                        if ($this->helper->last($chunks['navs_chunks']['all'])['date'] === $this->helper->last($dbNav['navs'])['date']) {
+                            return true;
+                        }
+                    }
+                } else {
+                    $chunks = [];
+                    $chunks['id'] = (int) $dbNav['id'];
+                    $chunks['last_updated'] = $dbNav['last_updated'];
+                }
+            } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
+
+                return false;
+            }
+
+            if ($newNavs && count($newNavs) > 0) {
+                if (isset($chunks['navs_chunks']['all']) && count($chunks['navs_chunks']['all']) > 0) {
+                    $chunks['navs_chunks']['all'] = array_replace($chunks['navs_chunks']['all'], $newNavs);
+                } else {
+                    $chunks['navs_chunks']['all'] = $newNavs;
+                }
+            } else {
+                if (isset($chunks['navs_chunks']['all']) && count($chunks['navs_chunks']['all']) > 0) {
+                    $chunks['navs_chunks']['all'] = array_replace($chunks['navs_chunks']['all'], $dbNav['navs']);
+                } else {
+                    $chunks['navs_chunks']['all'] = $dbNav['navs'];
+                }
             }
         }
 
-        if ($totalNavs > 7) {
-            if ($totalNavs > 30) {
-                $forMonth = $totalNavs - 30;
-                $forMonthStartNav = $dbNavNavs[$forMonth]['nav'];
-            } else {
-                $forMonth = $totalNavs;
-                $forMonthStartNav = $dbNavNavs[0]['nav'];
+        $totalNavs = count($chunks['navs_chunks']['all']);
+
+        $datesKeys = array_keys($chunks['navs_chunks']['all']);
+
+        foreach (['week', 'month', 'threeMonth', 'sixMonth', 'year', 'threeYear', 'fiveYear', 'tenYear'] as $time) {
+            $latestDate = \Carbon\Carbon::parse($this->helper->lastKey($chunks['navs_chunks']['all']));
+            $timeDate = null;
+
+            if ($time === 'week') {
+                $timeDate = $latestDate->subDay(6)->toDateString();
+            } else if ($time === 'month') {
+                $timeDate = $latestDate->subMonth()->toDateString();
+            } else if ($time === 'threeMonth') {
+                $timeDate = $latestDate->subMonth(3)->toDateString();
+            } else if ($time === 'sixMonth') {
+                $timeDate = $latestDate->subMonth(6)->toDateString();
+            } else if ($time === 'year') {
+                $timeDate = $latestDate->subYear()->toDateString();
+            } else if ($time === 'threeYear') {
+                $timeDate = $latestDate->subYear(3)->toDateString();
+            } else if ($time === 'fiveYear') {
+                $timeDate = $latestDate->subYear(5)->toDateString();
+            } else if ($time === 'tenYear') {
+                $timeDate = $latestDate->subYear(10)->toDateString();
             }
 
-            $chunks['navs_chunks']['month'] = [];
-            for ($forMonth; $forMonth < $totalNavs; $forMonth++) {
-                $chunks['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']] = [];
-                $chunks['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['date'] = $dbNavNavs[$forMonth]['date'];
-                $chunks['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['nav'] = $dbNavNavs[$forMonth]['nav'];
-                $chunks['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forMonth]['nav'] - $forMonthStartNav, 4);
-                $chunks['navs_chunks']['month'][$dbNavNavs[$forMonth]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forMonth]['nav'] * 100 / $forMonthStartNav - 100), 2);
-            }
-        }
+            if (isset($chunks['navs_chunks']['all'][$timeDate])) {
+                $timeDateKey = array_search($timeDate, $datesKeys);
+                $timeDateChunks = array_slice($chunks['navs_chunks']['all'], $timeDateKey);
 
-        if ($totalNavs > 30) {
-            if ($totalNavs > 90) {
-                $forThreeMonth = $totalNavs - 90;
-                $forThreeMonthStartNav = $dbNavNavs[$forThreeMonth]['nav'];
-            } else {
-                $forThreeMonth = $totalNavs;
-                $forThreeMonthStartNav = $dbNavNavs[0]['nav'];
+                if (count($timeDateChunks) > 0) {
+                    $chunks['navs_chunks'][$time] = [];
+
+                    foreach ($timeDateChunks as $timeDateChunkDate => $timeDateChunk) {
+                        $chunks['navs_chunks'][$time][$timeDateChunkDate] = [];
+                        $chunks['navs_chunks'][$time][$timeDateChunkDate]['date'] = $timeDateChunk['date'];
+                        $chunks['navs_chunks'][$time][$timeDateChunkDate]['nav'] = $timeDateChunk['nav'];
+                        $chunks['navs_chunks'][$time][$timeDateChunkDate]['diff'] =
+                            numberFormatPrecision($timeDateChunk['nav'] - $this->helper->first($timeDateChunks)['nav'], 4);
+                        $chunks['navs_chunks'][$time][$timeDateChunkDate]['diff_percent'] =
+                            numberFormatPrecision(($timeDateChunk['nav'] * 100 / $this->helper->first($timeDateChunks)['nav'] - 100), 2);
+                    }
+                }
             }
 
-            $chunks['navs_chunks']['threeMonth'] = [];
-            for ($forThreeMonth; $forThreeMonth < $totalNavs; $forThreeMonth++) {
-                $chunks['navs_chunks']['threeMonth'][$dbNavNavs[$forThreeMonth]['date']] = [];
-                $chunks['navs_chunks']['threeMonth'][$dbNavNavs[$forThreeMonth]['date']]['date'] = $dbNavNavs[$forThreeMonth]['date'];
-                $chunks['navs_chunks']['threeMonth'][$dbNavNavs[$forThreeMonth]['date']]['nav'] = $dbNavNavs[$forThreeMonth]['nav'];
-                $chunks['navs_chunks']['threeMonth'][$dbNavNavs[$forThreeMonth]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forThreeMonth]['nav'] - $forThreeMonthStartNav, 4);
-                $chunks['navs_chunks']['threeMonth'][$dbNavNavs[$forThreeMonth]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forThreeMonth]['nav'] * 100 / $forThreeMonthStartNav - 100), 2);
-            }
-        }
-
-        if ($totalNavs > 90) {
-            if ($totalNavs > 180) {
-                $forSixMonth = $totalNavs - 180;
-                $forSixMonthStartNav = $dbNavNavs[$forSixMonth]['nav'];
-            } else {
-                $forSixMonth = $totalNavs;
-                $forSixMonthStartNav = $dbNavNavs[0]['nav'];
-            }
-
-            $chunks['navs_chunks']['sixMonth'] = [];
-            for ($forSixMonth; $forSixMonth < $totalNavs; $forSixMonth++) {
-                $chunks['navs_chunks']['sixMonth'][$dbNavNavs[$forSixMonth]['date']] = [];
-                $chunks['navs_chunks']['sixMonth'][$dbNavNavs[$forSixMonth]['date']]['date'] = $dbNavNavs[$forSixMonth]['date'];
-                $chunks['navs_chunks']['sixMonth'][$dbNavNavs[$forSixMonth]['date']]['nav'] = $dbNavNavs[$forSixMonth]['nav'];
-                $chunks['navs_chunks']['sixMonth'][$dbNavNavs[$forSixMonth]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forSixMonth]['nav'] - $forSixMonthStartNav, 4);
-                $chunks['navs_chunks']['sixMonth'][$dbNavNavs[$forSixMonth]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forSixMonth]['nav'] * 100 / $forSixMonthStartNav - 100), 2);
-            }
-        }
-
-        if ($totalNavs > 180) {
-            if ($totalNavs > 365) {
-                $forYear = $totalNavs - 365;
-                $forYearStartNav = $dbNavNavs[$forYear]['nav'];
-            } else {
-                $forYear = $totalNavs;
-                $forYearStartNav = $dbNavNavs[0]['nav'];
-            }
-
-            $chunks['navs_chunks']['year'] = [];
-            for ($forYear; $forYear < $totalNavs; $forYear++) {
-                $chunks['navs_chunks']['year'][$dbNavNavs[$forYear]['date']] = [];
-                $chunks['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['date'] = $dbNavNavs[$forYear]['date'];
-                $chunks['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['nav'] = $dbNavNavs[$forYear]['nav'];
-                $chunks['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forYear]['nav'] - $forYearStartNav, 4);
-                $chunks['navs_chunks']['year'][$dbNavNavs[$forYear]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forYear]['nav'] * 100 / $forYearStartNav - 100), 2);
-            }
-        }
-
-        if ($totalNavs > 365) {
-            if ($totalNavs > 1095) {
-                $forThreeYear = $totalNavs - 1095;
-                $forThreeYearStartNav = $dbNavNavs[$forThreeYear]['nav'];
-            } else {
-                $forThreeYear = $totalNavs;
-                $forThreeYearStartNav = $dbNavNavs[0]['nav'];
-            }
-
-            $chunks['navs_chunks']['threeYear'] = [];
-            for ($forThreeYear; $forThreeYear < $totalNavs; $forThreeYear++) {
-                $chunks['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']] = [];
-                $chunks['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['date'] = $dbNavNavs[$forThreeYear]['date'];
-                $chunks['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['nav'] = $dbNavNavs[$forThreeYear]['nav'];
-                $chunks['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forThreeYear]['nav'] - $forThreeYearStartNav, 4);
-                $chunks['navs_chunks']['threeYear'][$dbNavNavs[$forThreeYear]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forThreeYear]['nav'] * 100 / $forThreeYearStartNav - 100), 2);
-            }
-        }
-
-        if ($totalNavs > 1095) {
-            if ($totalNavs > 1825) {
-                $forFiveYear = $totalNavs - 1825;
-                $forFiveYearStartNav = $dbNavNavs[$forFiveYear]['nav'];
-            } else {
-                $forFiveYear = $totalNavs;
-                $forFiveYearStartNav = $dbNavNavs[0]['nav'];
-            }
-
-            $chunks['navs_chunks']['fiveYear'] = [];
-            for ($forFiveYear; $forFiveYear < $totalNavs; $forFiveYear++) {
-                $chunks['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']] = [];
-                $chunks['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['date'] = $dbNavNavs[$forFiveYear]['date'];
-                $chunks['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['nav'] = $dbNavNavs[$forFiveYear]['nav'];
-                $chunks['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forFiveYear]['nav'] - $forFiveYearStartNav, 4);
-                $chunks['navs_chunks']['fiveYear'][$dbNavNavs[$forFiveYear]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forFiveYear]['nav'] * 100 / $forFiveYearStartNav - 100), 2);
-            }
-        }
-
-        if ($totalNavs > 3652) {
-            if ($totalNavs > 3652) {
-                $forTenYear = $totalNavs - 3652;
-                $forTenYearStartNav = $dbNavNavs[$forTenYear]['nav'];
-            } else {
-                $forTenYear = $totalNavs;
-                $forTenYearStartNav = $dbNavNavs[0]['nav'];
-            }
-
-            $chunks['navs_chunks']['tenYear'] = [];
-            for ($forTenYear; $forTenYear < $totalNavs; $forTenYear++) {
-                $chunks['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']] = [];
-                $chunks['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['date'] = $dbNavNavs[$forTenYear]['date'];
-                $chunks['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['nav'] = $dbNavNavs[$forTenYear]['nav'];
-                $chunks['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['diff'] =
-                    numberFormatPrecision($dbNavNavs[$forTenYear]['nav'] - $forTenYearStartNav, 4);
-                $chunks['navs_chunks']['tenYear'][$dbNavNavs[$forTenYear]['date']]['diff_percent'] =
-                    numberFormatPrecision(($dbNavNavs[$forTenYear]['nav'] * 100 / $forTenYearStartNav - 100), 2);
-            }
-        }
-
-        $chunks['navs_chunks']['all'] = [];
-        $forAllStartNav = $dbNavNavs[0]['nav'];
-        for ($forAll = 0; $forAll < $totalNavs; $forAll++) {
-            $chunks['navs_chunks']['all'][$dbNavNavs[$forAll]['date']] = [];
-            $chunks['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['date'] = $dbNavNavs[$forAll]['date'];
-            $chunks['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['nav'] = $dbNavNavs[$forAll]['nav'];
-            $chunks['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['diff'] =
-                numberFormatPrecision($dbNavNavs[$forAll]['nav'] - $forAllStartNav, 4);
-            $chunks['navs_chunks']['all'][$dbNavNavs[$forAll]['date']]['diff_percent'] =
-                numberFormatPrecision(($dbNavNavs[$forAll]['nav'] * 100 / $forAllStartNav - 100), 2);
         }
 
         try {
@@ -1263,26 +1107,32 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function createRollingReturns($dbNav, $i)
+    protected function createRollingReturns($dbNav, $i, $data, $newNavs = false)
     {
-        try {
-            if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $dbNav['id'] . '.json')) {
-                $rr = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $dbNav['id'] . '.json'), true);
+        if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+            $rr = [];
+            $rr['id'] = $dbNav['id'];
+            $rr['last_updated'] = $dbNav['last_updated'];
+        } else {
+            try {
+                if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $dbNav['id'] . '.json')) {
+                    $rr = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $dbNav['id'] . '.json'), true);
 
-                if (isset($rr['year']) && count($rr['year']) > 0) {
-                    if ($this->helper->last($rr['year'])['to'] === $this->helper->last($dbNav['navs'])['date']) {
-                        // return true;
+                    if (isset($rr['year']) && count($rr['year']) > 0) {
+                        if ($this->helper->last($rr['year'])['to'] === $this->helper->last($dbNav['navs'])['date']) {
+                            return true;
+                        }
                     }
+                } else {
+                    $rr = [];
+                    $rr['id'] = $dbNav['id'];
+                    $rr['last_updated'] = $dbNav['last_updated'];
                 }
-            } else {
-                $rr = [];
-                $rr['id'] = $dbNav['id'];
-                $rr['last_updated'] = $dbNav['last_updated'];
-            }
-        } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
+            } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
 
-            return false;
+                return false;
+            }
         }
 
         $schemeRr = [];
@@ -1297,7 +1147,9 @@ class MfExtractdata extends BasePackage
             return false;
         }
 
-        if (isset($dbNav['navs']) && count($dbNav['navs']) < 365) {
+        $latestDate = \Carbon\Carbon::parse($this->helper->lastKey($dbNav['navs']));
+        $yearBefore = $latestDate->subYear()->toDateString();
+        if (!isset($dbNav['navs'][$yearBefore])) {
             try {
                 $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $rr['id'] . '.json', $this->helper->encode($rr));
             } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
@@ -1309,53 +1161,94 @@ class MfExtractdata extends BasePackage
             return true;
         }
 
-        foreach ($dbNav['navs'] as $date => $nav) {
+        if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
+            $dbNavNavs = $dbNav['navs'];
+        } else {
+            if ($newNavs && count($newNavs) > 0) {
+                $dbNavNavs = $newNavs;
+
+                foreach ($dbNavNavs as $date => $nav) {
+                    foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year'] as $rrTerm) {
+                        try {
+                            $toDate = \Carbon\Carbon::parse($date);
+
+                            if ($rrTerm === 'year') {
+                                $fromDate = $toDate->subYear()->toDateString();
+                            } else if ($rrTerm === 'two_year') {
+                                $fromDate = $toDate->subYear(2)->toDateString();
+                            } else if ($rrTerm === 'three_year') {
+                                $fromDate = $toDate->subYear(3)->toDateString();
+                            } else if ($rrTerm === 'five_year') {
+                                $fromDate = $toDate->subYear(5)->toDateString();
+                            } else if ($rrTerm === 'seven_year') {
+                                $fromDate = $toDate->subYear(7)->toDateString();
+                            } else if ($rrTerm === 'ten_year') {
+                                $fromDate = $toDate->subYear(10)->toDateString();
+                            } else if ($rrTerm === 'fifteen_year') {
+                                $fromDate = $toDate->subYear(15)->toDateString();
+                            }
+
+                            if (isset($dbNav['navs'][$fromDate])) {
+                                $dbNavNavs[$fromDate] = $dbNav['navs'][$fromDate];
+                            }
+                        } catch (\throwable $e) {
+                            $this->addResponse($e->getMessage(), 1);
+
+                            return false;
+                        }
+                    }
+                }
+
+                $dbNavNavs = msort(array: $dbNavNavs, key: 'timestamp', preserveKey: true);
+            } else {
+                $dbNavNavs = $dbNav['navs'];
+            }
+        }
+
+        foreach ($dbNavNavs as $date => $nav) {
             foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year'] as $rrTerm) {
                 try {
-                    $add = $startDate = \Carbon\Carbon::parse($date);
-
-                    // if ($startDate->isWeekend()) {
-                    //     continue 2;
-                    // }
+                    $fromDate = \Carbon\Carbon::parse($date);
+                    $time = null;
 
                     if ($rrTerm === 'year') {
-                        $add = $add->addYear()->toDateString();
+                        $toDate = $fromDate->addYear()->toDateString();
                         $time = 1;
                     } else if ($rrTerm === 'two_year') {
-                        $add = $add->addYear(2)->toDateString();
+                        $toDate = $fromDate->addYear(2)->toDateString();
                         $time = 2;
                     } else if ($rrTerm === 'three_year') {
-                        $add = $add->addYear(3)->toDateString();
+                        $toDate = $fromDate->addYear(3)->toDateString();
                         $time = 3;
                     } else if ($rrTerm === 'five_year') {
-                        $add = $add->addYear(5)->toDateString();
+                        $toDate = $fromDate->addYear(5)->toDateString();
                         $time = 5;
                     } else if ($rrTerm === 'seven_year') {
-                        $add = $add->addYear(7)->toDateString();
+                        $toDate = $fromDate->addYear(7)->toDateString();
                         $time = 7;
                     } else if ($rrTerm === 'ten_year') {
-                        $add = $add->addYear(10)->toDateString();
+                        $toDate = $fromDate->addYear(10)->toDateString();
                         $time = 10;
                     } else if ($rrTerm === 'fifteen_year') {
-                        $add = $add->addYear(15)->toDateString();
+                        $toDate = $fromDate->addYear(15)->toDateString();
                         $time = 15;
                     }
 
                     if (isset($rr[$rrTerm][$date])) {
-                        // continue;
+                        continue;
                     }
 
-                    if (isset($dbNav['navs'][$add])) {
+                    if (isset($dbNavNavs[$toDate])) {
                         if (!isset($rr[$rrTerm])) {
                             $rr[$rrTerm] = [];
                         }
 
                         $rr[$rrTerm][$date]['from'] = $date;
-                        $rr[$rrTerm][$date]['to'] = $add;
+                        $rr[$rrTerm][$date]['to'] = $toDate;
                         $rr[$rrTerm][$date]['cagr'] =
-                            numberFormatPrecision((pow(($dbNav['navs'][$add]['nav']/$nav['nav']),(1/$time)) - 1) * 100);
+                            numberFormatPrecision((pow(($dbNavNavs[$toDate]['nav']/$nav['nav']),(1/$time)) - 1) * 100);
 
-                        if ($add === $this->helper->last($dbNav['navs'])['date']) {
+                        if ($toDate === $this->helper->last($dbNavNavs)['date']) {
                             $schemeRr[$rrTerm . '_cagr'] = $rr[$rrTerm][$date]['cagr'];
                         }
                     }
@@ -1366,6 +1259,7 @@ class MfExtractdata extends BasePackage
                 }
             }
         }
+
         try {
             $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $rr['id'] . '.json', $this->helper->encode($rr));
         } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
@@ -1376,7 +1270,7 @@ class MfExtractdata extends BasePackage
 
         if (count($schemeRr) > 0) {
             $this->schemes[$i] = array_replace($this->schemes[$i], $schemeRr);
-            // trace([$this->schemes[$i]]);
+
             try {
                 $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
             } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
@@ -1384,9 +1278,8 @@ class MfExtractdata extends BasePackage
 
                 return false;
             }
-            // trace([$this->schemes[$i]]);
         }
-        // trace([$rr['id'], $schemeRr]);
+
         return true;
     }
 
@@ -1426,7 +1319,7 @@ class MfExtractdata extends BasePackage
                 throw new \Exception('Cannot process missing AMFI navs correctly for amfiCode : ' . $amfiCode);
             }
 
-            return $amfiNavs;
+            return array_values($amfiNavs);
         }
 
         return $amfiNavsArr;
@@ -1454,59 +1347,59 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
-    protected function initDb($type, $data = [])
-    {
-        try {
-            $scanDir = $this->basepackages->utils->scanDir($this->destDir, false);
+    // protected function initDb($type, $data = [])
+    // {
+    //     try {
+    //         $scanDir = $this->basepackages->utils->scanDir($this->destDir, false);
 
-            if ($scanDir && count($scanDir['files']) > 0) {
-                foreach ($scanDir['files'] as $file) {
-                    if (str_ends_with($file, '-' . $type . '.db')) {
-                        try {
-                            return (new Sqlite())->init(base_path($file));
-                        } catch (\throwable $e) {
-                            $this->addResponse('Unable to open database file', 1);
+    //         if ($scanDir && count($scanDir['files']) > 0) {
+    //             foreach ($scanDir['files'] as $file) {
+    //                 if (str_ends_with($file, '-' . $type . '.db')) {
+    //                     try {
+    //                         return (new Sqlite())->init(base_path($file));
+    //                     } catch (\throwable $e) {
+    //                         $this->addResponse('Unable to open database file', 1);
 
-                            return false;
-                        }
-                    }
-                }
-            }
+    //                         return false;
+    //                     }
+    //                 }
+    //             }
+    //         }
 
-            if (count($data) > 0) {
-                $type === 'funds';
-            }
+    //         if (count($data) > 0) {
+    //             $type === 'funds';
+    //         }
 
-            //File not exists, redownload
-            if (!$this->localContent->fileExists($this->destDir . $this->today . '-' . $type . '.db')) {
-                if (count($data) > 0) {
-                    $this->addResponse('Download the latest funds file using Extractdata!', 1);
+    //         //File not exists, redownload
+    //         if (!$this->localContent->fileExists($this->destDir . $this->today . '-' . $type . '.db')) {
+    //             if (count($data) > 0) {
+    //                 $this->addResponse('Download the latest funds file using Extractdata!', 1);
 
-                    return false;
-                }
+    //                 return false;
+    //             }
 
-                if ($type === 'latest') {
-                    $this->downloadMfNavsData(true);
-                } else {
-                    $this->downloadMfNavsData(false, true);
-                }
+    //             if ($type === 'latest') {
+    //                 $this->downloadMfNavsData(true);
+    //             } else {
+    //                 $this->downloadMfNavsData(false, true);
+    //             }
 
-                $this->extractMfData();
-            }
-        } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
+    //             $this->extractMfData();
+    //         }
+    //     } catch (FilesystemException | UnableToCheckExistence | \throwable $e) {
+    //         $this->addResponse($e->getMessage(), 1);
 
-            return false;
-        }
+    //         return false;
+    //     }
 
-        try {
-            return (new Sqlite())->init(base_path($this->destDir . $this->today . '-' . $type . '.db'));
-        } catch (\throwable $e) {
-            $this->addResponse('Unable to open database file', 1);
+    //     try {
+    //         return (new Sqlite())->init(base_path($this->destDir . $this->today . '-' . $type . '.db'));
+    //     } catch (\throwable $e) {
+    //         $this->addResponse('Unable to open database file', 1);
 
-            return false;
-        }
-    }
+    //         return false;
+    //     }
+    // }
 
     protected function processUpdateTimer($isinsTotal, $lineNo)
     {
