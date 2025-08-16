@@ -1,8 +1,8 @@
 <?php
 
-namespace Apps\Fintech\Packages\Mf\Extractdata\TaskCalls;
+namespace Apps\Fintech\Packages\Mf\Tools\Extractdata\TaskCalls;
 
-use Apps\Fintech\Packages\Mf\Extractdata\MfExtractdata;
+use Apps\Fintech\Packages\Mf\Tools\Extractdata\MfToolsExtractdata;
 use System\Base\Providers\BasepackagesServiceProvider\Packages\Workers\Calls;
 
 class ProcessSyncSchemesNavs extends Calls
@@ -27,7 +27,7 @@ class ProcessSyncSchemesNavs extends Calls
             }
 
             try {
-                $mfExtractDataPackage = new MfExtractdata;
+                $mfExtractDataPackage = new MfToolsExtractdata;
 
                 if (isset($this->args['schemes']) &&
                     $this->args['schemes'] == 'true'

@@ -1,10 +1,11 @@
 <?php
 
-namespace Apps\Fintech\Packages\Mf\Extractdata;
+namespace Apps\Fintech\Packages\Mf\Tools\Extractdata;
 
 use Apps\Fintech\Packages\Mf\Amcs\MfAmcs;
 use Apps\Fintech\Packages\Mf\Categories\MfCategories;
 use Apps\Fintech\Packages\Mf\Extractdata\Settings;
+use Apps\Fintech\Packages\Mf\Portfolios\MfPortfolios;
 use Apps\Fintech\Packages\Mf\Schemes\MfSchemes;
 use Apps\Fintech\Packages\Mf\Types\MfTypes;
 use League\Csv\Reader;
@@ -12,15 +13,15 @@ use League\Csv\Statement;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCheckExistence;
 use League\Flysystem\UnableToCreateDirectory;
-use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToDeleteDirectory;
+use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToReadFile;
 use League\Flysystem\UnableToWriteFile;
 use Phalcon\Db\Enum;
 use System\Base\BasePackage;
 use System\Base\Providers\DatabaseServiceProvider\Sqlite;
 
-class MfExtractdata extends BasePackage
+class MfToolsExtractdata extends BasePackage
 {
     protected $now;
 
@@ -34,7 +35,7 @@ class MfExtractdata extends BasePackage
 
     protected $sourceLink;
 
-    protected $destDir = 'apps/Fintech/Packages/Mf/Extractdata/Data/';
+    protected $destDir = 'apps/Fintech/Packages/Mf/Tools/Extractdata/Data/';
 
     protected $destFile;
 
@@ -482,7 +483,7 @@ class MfExtractdata extends BasePackage
             $statement = (new Statement())->orderByAsc('AMC');
             $records = $statement->process($csv);
 
-            $isinsTotal = count($records);
+            $totalRecords = count($records);
             $lineNo = 1;
 
             foreach ($records as $line) {
@@ -571,7 +572,7 @@ class MfExtractdata extends BasePackage
                         if ($scheme['scheme_md5'] &&
                             $scheme['scheme_md5'] === $lineMd5
                         ) {
-                            $this->processUpdateTimer($isinsTotal, $lineNo);
+                            $this->processUpdateTimer($totalRecords, $lineNo);
 
                             $lineNo++;
 
@@ -685,19 +686,19 @@ class MfExtractdata extends BasePackage
                         return false;
                     }
 
-                    try {
-                        if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $line['Code'])) {
-                            $this->localContent->createDirectory($this->destDir . 'navsindex/' . $line['Code']);
-                        }
-                    } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
-                        $this->addResponse($e->getMessage(), 1);
+                    // try {
+                    //     if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $line['Code'])) {
+                    //         $this->localContent->createDirectory($this->destDir . 'navsindex/' . $line['Code']);
+                    //     }
+                    // } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
+                    //     $this->addResponse($e->getMessage(), 1);
 
-                        return false;
-                    }
+                    //     return false;
+                    // }
                 }
 
                 //Timer
-                $this->processUpdateTimer($isinsTotal, $lineNo);
+                $this->processUpdateTimer($totalRecords, $lineNo);
 
                 $lineNo++;
             }
@@ -849,9 +850,9 @@ class MfExtractdata extends BasePackage
                             if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
                                 $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
 
-                                if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'])) {
-                                    $this->localContent->deleteDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id']);
-                                }
+                                // if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'])) {
+                                //     $this->localContent->deleteDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id']);
+                                // }
 
                                 unset($this->schemes[$this->schemes[$i]['id']]);
 
@@ -875,9 +876,9 @@ class MfExtractdata extends BasePackage
                             if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
                                 $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
 
-                                if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'])) {
-                                    $this->localContent->deleteDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id']);
-                                }
+                                // if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'])) {
+                                //     $this->localContent->deleteDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id']);
+                                // }
 
                                 unset($this->schemes[$this->schemes[$i]['id']]);
 
@@ -926,34 +927,34 @@ class MfExtractdata extends BasePackage
                 }
 
                 //if in case you just want to extract Navs data from the Navs DB and dump individual navs data in Extractdata/Data/navs folder
-                if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0
-                    && isset($data['navsindex'])
-                ) {
-                    foreach ($dbNav['navs'] as $dbNavDate => $dbNavNavs) {
-                        $dates = explode('-', $dbNavDate);
+                // if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0
+                //     && isset($data['navsindex'])
+                // ) {
+                //     foreach ($dbNav['navs'] as $dbNavDate => $dbNavNavs) {
+                //         $dates = explode('-', $dbNavDate);
 
-                        try {
-                            if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0])) {
-                                $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0]);
-                            }
-                            if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1])) {
-                                $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1]);
-                            }
+                //         try {
+                //             if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0])) {
+                //                 $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0]);
+                //             }
+                //             if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1])) {
+                //                 $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1]);
+                //             }
 
-                            $this->localContent->write(
-                                $this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1] . '/' . $dates[2] . '.json', $this->helper->encode($dbNavNavs)
-                            );
-                        } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
+                //             $this->localContent->write(
+                //                 $this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1] . '/' . $dates[2] . '.json', $this->helper->encode($dbNavNavs)
+                //             );
+                //         } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
+                //             $this->addResponse($e->getMessage(), 1);
 
-                            return false;
-                        }
-                    }
+                //             return false;
+                //         }
+                //     }
 
-                    $this->processUpdateTimer($dbCount, $i + 1);
+                //     $this->processUpdateTimer($dbCount, $i + 1);
 
-                    continue;
-                }
+                //     continue;
+                // }
 
                 if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0 &&
                     isset($dbNav['last_updated']) &&
@@ -1064,26 +1065,26 @@ class MfExtractdata extends BasePackage
                         return false;
                     }
 
-                    foreach ($dbNav['navs'] as $dbNavDate => $dbNavNavs) {
-                        $dates = explode('-', $dbNavDate);
+                    // foreach ($dbNav['navs'] as $dbNavDate => $dbNavNavs) {
+                    //     $dates = explode('-', $dbNavDate);
 
-                        try {
-                            if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0])) {
-                                $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0]);
-                            }
-                            if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1])) {
-                                $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1]);
-                            }
+                    //     try {
+                    //         if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0])) {
+                    //             $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0]);
+                    //         }
+                    //         if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1])) {
+                    //             $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1]);
+                    //         }
 
-                            $this->localContent->write(
-                                $this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1] . '/' . $dates[2] . '.json', $this->helper->encode($dbNavNavs)
-                            );
-                        } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
+                    //         $this->localContent->write(
+                    //             $this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1] . '/' . $dates[2] . '.json', $this->helper->encode($dbNavNavs)
+                    //         );
+                    //     } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
+                    //         $this->addResponse($e->getMessage(), 1);
 
-                            return false;
-                        }
-                    }
+                    //         return false;
+                    //     }
+                    // }
 
                     $this->schemes[$i]['navs_last_updated'] = $dbNav['last_updated'];
                     $this->schemes[$i]['latest_nav'] = $this->helper->last($dbNav['navs'])['nav'];
@@ -1536,6 +1537,37 @@ class MfExtractdata extends BasePackage
         return true;
     }
 
+    protected function recalculatePortfolios()
+    {
+        $this->method = 'recalculatePortfolios';
+
+        $portfoliosPackage = $this->usePackage(MfPortfolios::class);
+
+        $portfolios = $portfoliosPackage->getAll()->mfportfolios;
+
+        if ($portfolios && count($portfolios) > 0) {
+            $totalRecords = count($portfolios);
+            $lineNo = 1;
+
+            foreach ($portfolios as $portfolio) {
+                $this->processUpdateTimer($totalRecords, $lineNo, 'Recalculating ' . $portfolio['name'] . '...');
+
+                if (!$portfoliosPackage->recalculatePortfolio(['portfolio_id' => $portfolio['id']])) {
+                    $this->addResponse(
+                        $portfoliosPackage->packagesData->responseMessage,
+                        $portfoliosPackage->packagesData->responseCode,
+                        $portfoliosPackage->packagesData->responseData ?? []
+                    );
+
+                    return false;
+                }
+
+                $lineNo++;
+            }
+        }
+
+        return true;
+    }
     // protected function initDb($type, $data = [])
     // {
     //     try {
@@ -1590,14 +1622,14 @@ class MfExtractdata extends BasePackage
     //     }
     // }
 
-    protected function processUpdateTimer($isinsTotal, $lineNo)
+    protected function processUpdateTimer($totalRecords, $lineNo, $text = null)
     {
         $this->basepackages->utils->setMicroTimer('End');
 
         $time = $this->basepackages->utils->getMicroTimer();
 
         if ($time && isset($time[1]['difference']) && $time[1]['difference'] !== 0) {
-            $totalTime = date("H:i:s", floor($time[1]['difference'] * ($isinsTotal - $lineNo)));
+            $totalTime = date("H:i:s", floor($time[1]['difference'] * ($totalRecords - $lineNo)));
         } else {
             $totalTime = date("H:i:s", 0);
         }
@@ -1607,8 +1639,8 @@ class MfExtractdata extends BasePackage
         if (PHP_SAPI !== 'cli') {
             $this->basepackages->progress->updateProgress(
                 method: $this->method,
-                counters: ['stepsTotal' => $isinsTotal, 'stepsCurrent' => ($lineNo + 1)],
-                text: 'Time remaining : ' . $totalTime . '...'
+                counters: ['stepsTotal' => $totalRecords, 'stepsCurrent' => $lineNo],
+                text: $text ?? 'Time remaining : ' . $totalTime . '...'
             );
         }
     }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Apps\Fintech\Packages\Mf\Extractdata\Install;
+namespace Apps\Fintech\Packages\Mf\Tools\Extractdata\Install;
 
 use System\Base\BasePackage;
 use System\Base\Providers\ModulesServiceProvider\TaskCallInstaller;

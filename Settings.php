@@ -1,6 +1,6 @@
 <?php
 
-namespace Apps\Fintech\Packages\Mf\Extractdata;
+namespace Apps\Fintech\Packages\Mf\Tools\Extractdata;
 
 use System\Base\BasePackage;
 
