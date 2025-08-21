@@ -7,6 +7,8 @@ use Apps\Fintech\Packages\Mf\Categories\MfCategories;
 use Apps\Fintech\Packages\Mf\Extractdata\Settings;
 use Apps\Fintech\Packages\Mf\Portfolios\MfPortfolios;
 use Apps\Fintech\Packages\Mf\Schemes\MfSchemes;
+use Apps\Fintech\Packages\Mf\Schemes\Model\AppsFintechMfSchemesSnapshotsNavsChunks;
+use Apps\Fintech\Packages\Mf\Schemes\Model\AppsFintechMfSchemesSnapshotsNavsRollingReturns;
 use Apps\Fintech\Packages\Mf\Types\MfTypes;
 use League\Csv\Reader;
 use League\Csv\Statement;
@@ -201,15 +203,6 @@ class MfToolsExtractdata extends BasePackage
                 //File is already downloaded
                 if ($this->localContent->fileExists($this->destDir . $this->year . '-funds.db.zst')) {
                     return true;
-                    // $remoteSize = (int) getRemoteFilesize($this->sourceLink);
-
-                    // $localSize = $this->localContent->fileSize($this->destDir . $this->year . '-funds.db.zst');
-
-                    // if ($remoteSize === $localSize) {
-                    //     $this->mfFileSizeMatch['funds'] = true;
-
-                    //     return true;
-                    // }
                 }
             } catch (FilesystemException | UnableToCheckExistence | UnableToDeleteFile | UnableToRetrieveMetadata | \throwable $e) {
                 $this->addResponse($e->getMessage(), 1);
@@ -371,12 +364,6 @@ class MfToolsExtractdata extends BasePackage
 
                     $file = $this->today . $file;
                 } else if (str_contains($file, '-funds')) {
-                    // if (isset($this->mfFileSizeMatch) &&
-                    //     $this->mfFileSizeMatch['funds'] === true
-                    // ) {//If compressed file match, the decompressed and indexed will also match.
-                    //     continue;
-                    // }
-
                     $this->localContent->delete($this->destDir . $this->year . $file . '.db');
 
                     $file = $this->year . $file;
@@ -472,7 +459,7 @@ class MfToolsExtractdata extends BasePackage
         return false;
     }
 
-    protected function processMfSchemesData()
+    protected function processMfSchemesData($data = [])
     {
         $this->method = 'processMfSchemesData';
 
@@ -510,6 +497,7 @@ class MfToolsExtractdata extends BasePackage
                 $schemeName = strtolower($line['Scheme NAV Name']);
                 if ((str_contains($schemeName, 'regular') ||
                     str_contains($schemeName, 'idcw') ||
+                    str_contains($schemeName, 'idwc') ||//Saw few entries with Canara
                     str_contains($schemeName, 'dividend') ||
                     str_contains($schemeName, 'etf') ||
                     str_contains($schemeName, 'income distribution')) &&
@@ -537,36 +525,6 @@ class MfToolsExtractdata extends BasePackage
 
                 if ($scheme) {
                     if ($scheme['id'] == $line['Code']) {
-                        // if (!isset($scheme['navs_last_updated']) && $store === 'apps_fintech_mf_schemes') {
-                        //     try {
-                        //         $dbNav = null;
-
-                        //         if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $scheme['id'] . '.json')) {
-                        //             $dbNav = $this->helper->decode($this->localContent->read('.ff/sp/apps_fintech_mf_schemes_navs/data/' . $scheme['id'] . '.json'), true);
-                        //         }
-                        //     } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
-                        //         $this->addResponse($e->getMessage(), 1);
-
-                        //         return false;
-                        //     }
-
-                        //     if ($dbNav && isset($dbNav['last_updated'])) {
-                        //         $scheme['navs_last_updated'] = $dbNav['last_updated'];
-
-                        //         if ($this->config->databasetype === 'db') {
-                        //             $this->db->insertAsDict('apps_fintech_mf_schemes', $scheme);//This also needs update.
-                        //         } else {
-                        //             try {
-                        //                 $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $line['Code'] . '.json', $this->helper->encode($scheme));
-                        //             } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-                        //                 $this->addResponse($e->getMessage(), 1);
-
-                        //                 return false;
-                        //             }
-                        //         }
-                        //     }
-                        // }
-
                         $lineMd5 = hash('md5', implode(',', $line));
 
                         if ($scheme['scheme_md5'] &&
@@ -685,16 +643,6 @@ class MfToolsExtractdata extends BasePackage
 
                         return false;
                     }
-
-                    // try {
-                    //     if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $line['Code'])) {
-                    //         $this->localContent->createDirectory($this->destDir . 'navsindex/' . $line['Code']);
-                    //     }
-                    // } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
-                    //     $this->addResponse($e->getMessage(), 1);
-
-                    //     return false;
-                    // }
                 }
 
                 //Timer
@@ -733,6 +681,32 @@ class MfToolsExtractdata extends BasePackage
     protected function processMfNavsData($data = [])
     {
         $this->method = 'processMfNavsData';
+
+        //updateinfo
+        $updateinfo = null;
+
+        try {
+            if ($this->localContent->fileExists($this->destDir . 'updateinfo.json')) {
+                $updateinfo = $this->helper->decode($this->localContent->read($this->destDir . 'updateinfo.json'), true);
+            }
+
+            if ($updateinfo) {
+                if (!isset($this->parsedCarbon[$this->today])) {
+                    $this->parsedCarbon[$this->today] = \Carbon\Carbon::parse($this->today);
+                }
+                if (!isset($this->parsedCarbon[$updateinfo['updated']])) {
+                    $this->parsedCarbon[$updateinfo['updated']] = \Carbon\Carbon::parse($updateinfo['updated']);
+                }
+
+                $numberOfDays = $this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']]->diffInDays($this->parsedCarbon[$this->today]) + 1;
+
+                if ($numberOfDays > 30) {
+                    $data['get_all_navs'] = true;
+                }
+            }
+        } catch (FilesystemException | UnableToReadFile | UnableToCheckExistence | \throwable $e) {
+            //Do nothing.
+        }
 
         try {
             if (!$this->localContent->fileExists($this->destDir . $this->today . '-latest.db')) {
@@ -850,10 +824,6 @@ class MfToolsExtractdata extends BasePackage
                             if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
                                 $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
 
-                                // if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'])) {
-                                //     $this->localContent->deleteDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id']);
-                                // }
-
                                 unset($this->schemes[$this->schemes[$i]['id']]);
 
                                 $this->processUpdateTimer($dbCount, $i + 1);
@@ -868,29 +838,53 @@ class MfToolsExtractdata extends BasePackage
                     }
                 }
 
-                if (count($amfiNavsArr) <= 2) {
-                    if ((isset($amfiNavsArr[1]['date']) && $amfiNavsArr[0]['date'] === $amfiNavsArr[1]['date']) ||
-                        count($amfiNavsArr) === 1
-                    ) {
-                        try {
-                            if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
-                                $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
+                if (($amfiNavsArr && count($amfiNavsArr) === 1) ||
+                    (($amfiNavsArr && count($amfiNavsArr) <= 2) && (isset($amfiNavsArr[1]['date']) && $amfiNavsArr[0]['date'] === $amfiNavsArr[1]['date']))
+                ) {
+                    try {
+                        if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
+                            $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
 
-                                // if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'])) {
-                                //     $this->localContent->deleteDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id']);
-                                // }
+                            unset($this->schemes[$this->schemes[$i]['id']]);
 
-                                unset($this->schemes[$this->schemes[$i]['id']]);
+                            $this->processUpdateTimer($dbCount, $i + 1);
 
-                                $this->processUpdateTimer($dbCount, $i + 1);
-
-                                continue;
-                            }
-                        } catch (FilesystemException | UnableToDeleteFile | UnableToDeleteDirectory | UnableToCheckExistence | \throwable $e) {
-                            $this->addResponse($e->getMessage(), 1);
-
-                            return false;
+                            continue;
                         }
+                    } catch (FilesystemException | UnableToDeleteFile | UnableToDeleteDirectory | UnableToCheckExistence | \throwable $e) {
+                        $this->addResponse($e->getMessage(), 1);
+
+                        return false;
+                    }
+                }
+
+                if (!isset($this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']])) {
+                    $this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']] = \Carbon\Carbon::parse($this->helper->last($amfiNavsArr)['date']);
+                }
+
+                if (!isset($this->parsedCarbon[$this->today])) {
+                    $this->parsedCarbon[$this->today] = \Carbon\Carbon::parse($this->today);
+                }
+
+                $numberOfDays = $this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']]->diffInDays($this->parsedCarbon[$this->today]) + 1;
+
+                //We remove the scheme if it is retired, no update from last 30 days
+                //This is an assumption that we will we will be updating the scheme database everyday.
+                if (!isset($data['get_all_navs']) && $numberOfDays >= 30) {
+                    try {
+                        if ($this->localContent->fileExists('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json')) {
+                            $this->localContent->delete('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json');
+
+                            unset($this->schemes[$this->schemes[$i]['id']]);
+
+                            $this->processUpdateTimer($dbCount, $i + 1);
+
+                            continue;
+                        }
+                    } catch (FilesystemException | UnableToDeleteFile | UnableToDeleteDirectory | UnableToCheckExistence | \throwable $e) {
+                        $this->addResponse($e->getMessage(), 1);
+
+                        return false;
                     }
                 }
 
@@ -925,36 +919,6 @@ class MfToolsExtractdata extends BasePackage
 
                     return false;
                 }
-
-                //if in case you just want to extract Navs data from the Navs DB and dump individual navs data in Extractdata/Data/navs folder
-                // if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0
-                //     && isset($data['navsindex'])
-                // ) {
-                //     foreach ($dbNav['navs'] as $dbNavDate => $dbNavNavs) {
-                //         $dates = explode('-', $dbNavDate);
-
-                //         try {
-                //             if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0])) {
-                //                 $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0]);
-                //             }
-                //             if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1])) {
-                //                 $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1]);
-                //             }
-
-                //             $this->localContent->write(
-                //                 $this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1] . '/' . $dates[2] . '.json', $this->helper->encode($dbNavNavs)
-                //             );
-                //         } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
-                //             $this->addResponse($e->getMessage(), 1);
-
-                //             return false;
-                //         }
-                //     }
-
-                //     $this->processUpdateTimer($dbCount, $i + 1);
-
-                //     continue;
-                // }
 
                 if ($dbNav && $dbNav['navs'] && count($dbNav['navs']) > 0 &&
                     isset($dbNav['last_updated']) &&
@@ -1015,6 +979,11 @@ class MfToolsExtractdata extends BasePackage
                         }
 
                         $dbNav['navs'][$amfiNav['date']]['timestamp'] = $this->parsedCarbon[$amfiNav['date']]->timestamp;
+                        $dbNav['navs'][$amfiNav['date']]['diff'] = 0;
+                        $dbNav['navs'][$amfiNav['date']]['diff_percent'] = 0;
+                        $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
+                        $dbNav['navs'][$amfiNav['date']]['diff_since_inception'] = 0;
+                        $dbNav['navs'][$amfiNav['date']]['diff_percent_since_inception'] = 0;
 
                         if ($amfiNavKey !== 0) {
                             $previousDay = $amfiNavs[$amfiNavKey - 1];
@@ -1024,7 +993,6 @@ class MfToolsExtractdata extends BasePackage
                             $dbNav['navs'][$amfiNav['date']]['diff_percent'] =
                                 numberFormatPrecision(($amfiNav['nav'] * 100 / $previousDay['nav']) - 100, 2);
 
-                            $dbNav['navs'][$amfiNav['date']]['trajectory'] = '-';
                             if ($amfiNav['nav'] > $previousDay['nav']) {
                                 $dbNav['navs'][$amfiNav['date']]['trajectory'] = 'up';
                             } else {
@@ -1065,27 +1033,6 @@ class MfToolsExtractdata extends BasePackage
                         return false;
                     }
 
-                    // foreach ($dbNav['navs'] as $dbNavDate => $dbNavNavs) {
-                    //     $dates = explode('-', $dbNavDate);
-
-                    //     try {
-                    //         if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0])) {
-                    //             $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0]);
-                    //         }
-                    //         if (!$this->localContent->directoryExists($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1])) {
-                    //             $this->localContent->createDirectory($this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1]);
-                    //         }
-
-                    //         $this->localContent->write(
-                    //             $this->destDir . 'navsindex/' . $this->schemes[$i]['id'] . '/' . $dates[0] . '/' . $dates[1] . '/' . $dates[2] . '.json', $this->helper->encode($dbNavNavs)
-                    //         );
-                    //     } catch (FilesystemException | UnableToCheckExistence | UnableToCreateDirectory | \throwable $e) {
-                    //         $this->addResponse($e->getMessage(), 1);
-
-                    //         return false;
-                    //     }
-                    // }
-
                     $this->schemes[$i]['navs_last_updated'] = $dbNav['last_updated'];
                     $this->schemes[$i]['latest_nav'] = $this->helper->last($dbNav['navs'])['nav'];
 
@@ -1118,10 +1065,20 @@ class MfToolsExtractdata extends BasePackage
             return false;
         }
 
+        //updateinfo
+        try {
+            $this->localContent->write($this->destDir . 'updateinfo.json', $this->helper->encode(['updated' => $this->today]));
+        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+            $this->addResponse($e->getMessage(), 1);
+
+            return false;
+        }
+
         return true;
     }
 
-    protected function createChunks($dbNav, $data, $newNavs = false)
+    //We also extract schemeSnapshot chunks and rollingReturns via this tools.
+    public function createChunks($dbNav, $data, $newNavs = false, &$schemeSnapshot = null)
     {
         if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
             $chunks = [];
@@ -1166,7 +1123,7 @@ class MfToolsExtractdata extends BasePackage
 
         $datesKeys = array_keys($chunks['navs_chunks']['all']);
 
-        foreach (['week', 'month', 'threeMonth', 'sixMonth', 'year', 'threeYear', 'fiveYear', 'tenYear'] as $time) {
+        foreach (['week', 'month', 'threeMonth', 'sixMonth', 'year', 'threeYear', 'fiveYear', 'tenYear', 'fifteenYear', 'twentyYear', 'twentyFiveYear', 'thirtyYear'] as $time) {
             $latestDate = \Carbon\Carbon::parse($this->helper->lastKey($chunks['navs_chunks']['all']));
             $timeDate = null;
 
@@ -1186,6 +1143,14 @@ class MfToolsExtractdata extends BasePackage
                 $timeDate = $latestDate->subYear(5)->toDateString();
             } else if ($time === 'tenYear') {
                 $timeDate = $latestDate->subYear(10)->toDateString();
+            } else if ($time === 'fifteenYear') {
+                $timeDate = $latestDate->subYear(15)->toDateString();
+            } else if ($time === 'twentyYear') {
+                $timeDate = $latestDate->subYear(20)->toDateString();
+            } else if ($time === 'twentyFiveYear') {
+                $timeDate = $latestDate->subYear(25)->toDateString();
+            } else if ($time === 'thirtyYear') {
+                $timeDate = $latestDate->subYear(30)->toDateString();
             }
 
             if (isset($chunks['navs_chunks']['all'][$timeDate])) {
@@ -1209,7 +1174,35 @@ class MfToolsExtractdata extends BasePackage
         }
 
         try {
-            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_chunks/data/' . $chunks['id'] . '.json', $this->helper->encode($chunks));
+            if ($schemeSnapshot) {
+                $this->setModelToUse(AppsFintechMfSchemesSnapshotsNavsChunks::class);
+
+                if ($this->config->databasetype !== 'db') {
+                    $this->ffStore = $this->ff->store($this->ffStoreToUse);
+
+                    $this->ffStore->setValidateData(false);
+                }
+
+                $schemeSnapshot['navs_chunks_ids'][$this->helper->last($dbNav['navs'])['date']] = $this->getLastInsertedId() + 1;
+
+                try {
+                    $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_snapshots_navs_chunks/data/' . $schemeSnapshot['navs_chunks_ids'][$this->helper->last($dbNav['navs'])['date']] . '.json', $this->helper->encode($chunks));
+
+                    $this->ffStore->count(true);
+                } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                    $this->addResponse($e->getMessage(), 1);
+
+                    return false;
+                }
+
+                if ($this->getLastInsertedId() !== $schemeSnapshot['navs_chunks_ids'][$this->helper->last($dbNav['navs'])['date']]) {
+                    $this->addResponse('Could not insert/update snapshot navs chunks, contact developer', 1);
+
+                    return false;
+                }
+            } else {
+                $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_chunks/data/' . $chunks['id'] . '.json', $this->helper->encode($chunks));
+            }
         } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
             $this->addResponse($e->getMessage(), 1);
 
@@ -1219,7 +1212,8 @@ class MfToolsExtractdata extends BasePackage
         return true;
     }
 
-    protected function createRollingReturns($dbNav, $i, $data, $newNavs = false)
+    //We also extract schemeSnapshot chunks and rollingReturns via this tools.
+    public function createRollingReturns($dbNav, $schemeId, $data, $newNavs = false, &$schemeSnapshot = null)
     {
         if (isset($data['get_all_navs']) && $data['get_all_navs'] == 'true') {
             $rr = [];
@@ -1250,24 +1244,63 @@ class MfToolsExtractdata extends BasePackage
         $schemeRr = [];
         $schemeRr['day_cagr'] = $this->helper->last($dbNav['navs'])['diff_percent'];
         $schemeRr['day_trajectory'] = $this->helper->last($dbNav['navs'])['trajectory'];
-        $this->schemes[$i] = array_replace($this->schemes[$i], $schemeRr);
-        try {
-            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
-        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
 
-            return false;
+        foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year', 'twenty_year', 'twenty_five_year', 'thirty_year'] as $rrTerm) {
+            $schemeRr[$rrTerm . '_rr'] = null;
+            $schemeRr[$rrTerm . '_cagr'] = null;
         }
 
         $latestDate = \Carbon\Carbon::parse($this->helper->lastKey($dbNav['navs']));
         $yearBefore = $latestDate->subYear()->toDateString();
-        if (!isset($dbNav['navs'][$yearBefore])) {
+
+        if ($schemeSnapshot) {
+            $schemeSnapshot['snapshots'][$this->helper->last($dbNav['navs'])['date']] = $schemeRr;
+        } else {
+            $this->schemes[$schemeId] = array_replace($this->schemes[$schemeId], $schemeRr);
             try {
-                $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $rr['id'] . '.json', $this->helper->encode($rr));
+                $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$schemeId]['id'] . '.json', $this->helper->encode($this->schemes[$schemeId]));
             } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
                 $this->addResponse($e->getMessage(), 1);
 
                 return false;
+            }
+        }
+
+        if (!isset($dbNav['navs'][$yearBefore])) {
+            if ($schemeSnapshot) {
+                $this->setModelToUse(AppsFintechMfSchemesSnapshotsNavsRollingReturns::class);
+
+                if ($this->config->databasetype !== 'db') {
+                    $this->ffStore = $this->ff->store($this->ffStoreToUse);
+
+                    $this->ffStore->setValidateData(false);
+                }
+
+                $schemeSnapshot['rolling_returns_ids'][$this->helper->last($dbNav['navs'])['date']] = $this->getLastInsertedId() + 1;
+
+                try {
+                    $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_snapshots_navs_rolling_returns/data/' . $schemeSnapshot['rolling_returns_ids'][$this->helper->last($dbNav['navs'])['date']] . '.json', $this->helper->encode($rr));
+
+                    $this->ffStore->count(true);
+                } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                    $this->addResponse($e->getMessage(), 1);
+
+                    return false;
+                }
+
+                if ($this->getLastInsertedId() !== $schemeSnapshot['rolling_returns_ids'][$this->helper->last($dbNav['navs'])['date']]) {
+                    $this->addResponse('Could not insert/update snapshot rolling returns, contact developer', 1);
+
+                    return false;
+                }
+            } else {
+                try {
+                    $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $rr['id'] . '.json', $this->helper->encode($rr));
+                } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                    $this->addResponse($e->getMessage(), 1);
+
+                    return false;
+                }
             }
 
             return true;
@@ -1280,7 +1313,7 @@ class MfToolsExtractdata extends BasePackage
                 $dbNavNavs = $newNavs;
 
                 foreach ($dbNavNavs as $date => $nav) {
-                    foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year'] as $rrTerm) {
+                    foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year', 'twenty_year', 'twenty_five_year', 'thirty_year'] as $rrTerm) {
                         try {
                             $toDate = \Carbon\Carbon::parse($date);
 
@@ -1298,6 +1331,12 @@ class MfToolsExtractdata extends BasePackage
                                 $fromDate = $toDate->subYear(10)->toDateString();
                             } else if ($rrTerm === 'fifteen_year') {
                                 $fromDate = $toDate->subYear(15)->toDateString();
+                            } else if ($rrTerm === 'twenty_year') {
+                                $fromDate = $toDate->subYear(20)->toDateString();
+                            } else if ($rrTerm === 'twenty_five_year') {
+                                $fromDate = $toDate->subYear(25)->toDateString();
+                            } else if ($rrTerm === 'thirty_year') {
+                                $fromDate = $toDate->subYear(30)->toDateString();
                             }
 
                             if (isset($dbNav['navs'][$fromDate])) {
@@ -1321,7 +1360,7 @@ class MfToolsExtractdata extends BasePackage
         $nationalHolidays = [];
 
         foreach ($dbNavNavs as $date => $nav) {
-            foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year'] as $rrTerm) {
+            foreach (['year', 'two_year', 'three_year', 'five_year', 'seven_year', 'ten_year', 'fifteen_year', 'twenty_year', 'twenty_five_year', 'thirty_year'] as $rrTerm) {
                 try {
                     $fromDate = \Carbon\Carbon::parse($date);
 
@@ -1370,6 +1409,15 @@ class MfToolsExtractdata extends BasePackage
                     } else if ($rrTerm === 'fifteen_year') {
                         $toDate = $fromDate->addYear(15)->toDateString();
                         $time = 15;
+                    } else if ($rrTerm === 'twenty_year') {
+                        $toDate = $fromDate->addYear(20)->toDateString();
+                        $time = 20;
+                    } else if ($rrTerm === 'twenty_five_year') {
+                        $toDate = $fromDate->addYear(25)->toDateString();
+                        $time = 25;
+                    } else if ($rrTerm === 'thirty_year') {
+                        $toDate = $fromDate->addYear(30)->toDateString();
+                        $time = 30;
                     }
 
                     if (isset($rr[$rrTerm][$date])) {
@@ -1398,12 +1446,40 @@ class MfToolsExtractdata extends BasePackage
             }
         }
 
-        try {
-            $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $rr['id'] . '.json', $this->helper->encode($rr));
-        } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-            $this->addResponse($e->getMessage(), 1);
+        if ($schemeSnapshot) {
+            $this->setModelToUse(AppsFintechMfSchemesSnapshotsNavsRollingReturns::class);
 
-            return false;
+            if ($this->config->databasetype !== 'db') {
+                $this->ffStore = $this->ff->store($this->ffStoreToUse);
+
+                $this->ffStore->setValidateData(false);
+            }
+
+            $schemeSnapshot['rolling_returns_ids'][$this->helper->last($dbNav['navs'])['date']] = $this->getLastInsertedId() + 1;
+
+            try {
+                $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_snapshots_navs_rolling_returns/data/' . $schemeSnapshot['rolling_returns_ids'][$this->helper->last($dbNav['navs'])['date']] . '.json', $this->helper->encode($rr));
+
+                $this->ffStore->count(true);
+            } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
+
+                return false;
+            }
+
+            if ($this->getLastInsertedId() !== $schemeSnapshot['rolling_returns_ids'][$this->helper->last($dbNav['navs'])['date']]) {
+                $this->addResponse('Could not insert/update snapshot rolling returns, contact developer', 1);
+
+                return false;
+            }
+        } else {
+            try {
+                $this->localContent->write('.ff/sp/apps_fintech_mf_schemes_navs_rolling_returns/data/' . $rr['id'] . '.json', $this->helper->encode($rr));
+            } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                $this->addResponse($e->getMessage(), 1);
+
+                return false;
+            }
         }
 
         //Calculate RR Average for timeframes. This will be used to narrow down our fund search.
@@ -1426,14 +1502,18 @@ class MfToolsExtractdata extends BasePackage
         }
 
         if (count($schemeRr) > 0) {
-            $this->schemes[$i] = array_replace($this->schemes[$i], $schemeRr);
+            if ($schemeSnapshot) {
+                $schemeSnapshot['snapshots'][$this->helper->last($dbNav['navs'])['date']] = $schemeRr;
+            } else {
+                $this->schemes[$schemeId] = array_replace($this->schemes[$schemeId], $schemeRr);
 
-            try {
-                $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$i]['id'] . '.json', $this->helper->encode($this->schemes[$i]));
-            } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
-                $this->addResponse($e->getMessage(), 1);
+                try {
+                    $this->localContent->write('.ff/sp/apps_fintech_mf_schemes/data/' . $this->schemes[$schemeId]['id'] . '.json', $this->helper->encode($this->schemes[$schemeId]));
+                } catch (FilesystemException | UnableToWriteFile | \throwable $e) {
+                    $this->addResponse($e->getMessage(), 1);
 
-                return false;
+                    return false;
+                }
             }
         }
 
@@ -1470,14 +1550,17 @@ class MfToolsExtractdata extends BasePackage
 
     protected function fillAmfiNavDays($amfiNavsArr, $amfiCode)
     {
-        // $firstDate = \Carbon\Carbon::parse($this->helper->first($amfiNavsArr)['date']);
-        // $lastDate = \Carbon\Carbon::parse($this->helper->last($amfiNavsArr)['date']);
+        if (!isset($this->parsedCarbon[$this->helper->first($amfiNavsArr)['date']])) {
+            $this->parsedCarbon[$this->helper->first($amfiNavsArr)['date']] = \Carbon\Carbon::parse($this->helper->first($amfiNavsArr)['date']);
+        }
+        if (!isset($this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']])) {
+            $this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']] = \Carbon\Carbon::parse($this->helper->last($amfiNavsArr)['date']);
+        }
 
-        // $numberOfDays = $firstDate->diffInDays($lastDate) + 1;//Include last day in calculation
-        // var_dump($numberOfDays);
-        $numberOfDays = (\Carbon\CarbonPeriod::between($this->helper->first($amfiNavsArr)['date'], $this->helper->last($amfiNavsArr)['date']))->toArray();
-        // trace([count($numberOfDays)]);
-        if (count($numberOfDays) != count($amfiNavsArr)) {
+        //Include last day in calculation
+        $numberOfDays = $this->parsedCarbon[$this->helper->first($amfiNavsArr)['date']]->diffInDays($this->parsedCarbon[$this->helper->last($amfiNavsArr)['date']]) + 1;
+
+        if ($numberOfDays != count($amfiNavsArr)) {
             $amfiNavs = [];
 
             foreach ($amfiNavsArr as $amfiNavKey => $amfiNav) {
@@ -1505,7 +1588,7 @@ class MfToolsExtractdata extends BasePackage
                 }
             }
 
-            if (count($numberOfDays) != count($amfiNavs)) {
+            if ($numberOfDays != count($amfiNavs)) {
                 throw new \Exception('Cannot process missing AMFI navs correctly for amfiCode : ' . $amfiCode);
             }
 
